@@ -1,4 +1,4 @@
-/* iobroker.kalender — Browser-App v0.5.0 */
+/* iobroker.kalender — Browser-App v0.5.1 */
 'use strict';
 
 // ── Global State ─────────────────────────────────────────────────────────────
@@ -363,17 +363,16 @@ function calNext() {
 function openEventModal(id, defaultDate, defaultHour) {
     editEventId      = id;
     editingSegments  = [];
-    // Build dpActions from old single-action or new multi-actions
+    const ev     = id ? events.find(e => e.id === id) : null;  // must be BEFORE ev is used
+    const modal  = document.getElementById('event-modal-inner');
+    // Build dpActions from existing event or start empty
     if (ev && ev.dpActions && ev.dpActions.length > 0) {
         editingDpActions = JSON.parse(JSON.stringify(ev.dpActions));
     } else if (ev && ev.setDatapointId) {
-        // migrate old format
         editingDpActions = [{ id: ev.setDatapointId, type: ev.setDatapointType || 'boolean', value: String(ev.setDatapointValue || ''), name: '', unit: '' }];
     } else {
         editingDpActions = [];
     }
-    const ev     = id ? events.find(e => e.id === id) : null;
-    const modal  = document.getElementById('event-modal-inner');
     const ds     = ev ? ev.date : (defaultDate || todayStr());
     const time   = ev ? (ev.time || '') : (defaultHour != null ? String(defaultHour).padStart(2,'0') + ':00' : '');
 
@@ -1102,26 +1101,6 @@ function renderSystem() {
         '<div class="sys-card"><div class="sys-val" style="color:var(--green);">' + evTd + '</div><div class="sys-label">Heute</div></div>' +
         '<div class="sys-card"><div class="sys-val" style="color:var(--orange);">' + birthdays.length + '</div><div class="sys-label">Geburtstage</div></div>' +
         '</div>' +
-
-        // Alexa
-        '<div class="card">' +
-        '<div class="card-header"><div class="card-title">\uD83D\uDDE3 Alexa Ger\u00E4te</div>' +
-        '<button class="btn btn-ghost btn-sm" onclick="discoverAlexaDevs()" id="btn-discover">\uD83D\uDD0D Automatisch erkennen</button></div>' +
-        '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Liest alle Echo-Devices aus dem alexa2-Adapter. State-Pfad: <code style="background:var(--bg3);padding:2px 6px;border-radius:3px;">...Commands.speak</code></div>' +
-        '<div id="alexa-discover-result" style="display:none;margin-bottom:12px;">' +
-        '<select id="alexa-discover-sel" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 10px;font-size:13px;width:100%;">' +
-        '<option value="">-- Ger\u00E4t ausw\u00E4hlen --</option>' +
-        '</select>' +
-        '<button class="btn btn-success btn-sm" onclick="addAlexaFromDiscover()" style="margin-top:6px;">+ Ausgew\u00E4hltes Ger\u00E4t hinzuf\u00FCgen</button>' +
-        '</div>' +
-        '<div id="alexa-dev-list">' + renderAlexaDevList() + '</div>' +
-        '<hr style="border-color:var(--border);margin:12px 0;">' +
-        '<div style="font-size:11px;color:var(--dim);margin-bottom:6px;">Manuell hinzuf\u00FCgen:</div>' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
-        '<input id="new-alexa-name" type="text" placeholder="Name (z.B. K\u00FCche Echo)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:13px;flex:1;min-width:120px;">' +
-        '<input id="new-alexa-state" type="text" placeholder="State-ID (alexa2.0.Echo-Devices.GXXXXX.Commands.speak)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:13px;flex:3;min-width:200px;">' +
-        '<button class="btn btn-primary btn-sm" onclick="addAlexaDev()">+ Hinzuf\u00FCgen</button>' +
-        '</div></div>' +
 
         // ICS
         '<div class="card">' +
