@@ -4,6 +4,16 @@ const http   = require('http');
 const https  = require('https');
 const fs     = require('fs');
 const path   = require('path');
+const { exec } = require('child_process');
+
+function execCmd(cmd) {
+    return new Promise((resolve, reject) => {
+        exec(cmd, { timeout: 10000 }, (err, stdout, stderr) => {
+            if (err) reject(new Error((stderr || err.message).trim()));
+            else resolve(stdout.trim());
+        });
+    });
+}
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -43,6 +53,10 @@ function todayStr(tz) {
     return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0');
 }
 
+// Day-of-week index: 0=Mon,1=Tue,2=Wed,3=Thu,4=Fri,5=Sat,6=Sun
+const DOW_MAP = { mon:0,tue:1,wed:2,thu:3,fri:4,sat:5,sun:6 };
+const WEEKDAYS = ['mon','tue','wed','thu','fri'];
+
 function occursOnDate(event, dateString) {
     if (!event || !event.date) return false;
     if (event.date === dateString) return true;
@@ -52,7 +66,21 @@ function occursOnDate(event, dateString) {
     if (target <= base) return false;
     if (event.recurrenceEnd && target > new Date(event.recurrenceEnd + 'T23:59:59')) return false;
     if (event.recurrence === 'daily')   return true;
-    if (event.recurrence === 'weekly')  return Math.round((target - base) / 86400000) % 7 === 0;
+    if (event.recurrence === 'weekly') {
+        // If specific weekdays are set, check day-of-week
+        const days = event.recurrenceDays && event.recurrenceDays.length > 0
+            ? event.recurrenceDays
+            : null;
+        if (days) {
+            const dow = (target.getDay() + 6) % 7; // Mon=0
+            return days.some(d => DOW_MAP[d] === dow);
+        }
+        return Math.round((target - base) / 86400000) % 7 === 0;
+    }
+    if (event.recurrence === 'workdays') {
+        const dow = (target.getDay() + 6) % 7;
+        return dow >= 0 && dow <= 4; // Mon-Fri
+    }
     if (event.recurrence === 'monthly') return base.getDate() === target.getDate();
     if (event.recurrence === 'yearly')  return base.getMonth() === target.getMonth() && base.getDate() === target.getDate();
     return false;
@@ -110,13 +138,22 @@ class KalenderAdapter extends utils.Adapter {
     async onReady() {
         try {
         try { this.pack = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')); }
-        catch(e) { this.pack = { version: '0.5.1' }; }
+        catch(e) { this.pack = { version: '0.5.4' }; }
 
         this.alexaDevices = [];
         try { const raw = this.config && this.config.alexaDevices; if (raw) this.alexaDevices = JSON.parse(raw); } catch(e) {}
 
-        this.tz = (this.config && this.config.timezone) || 'Europe/Berlin';
-        this._log('info', 'SYSTEM', 'Zeitzone: ' + this.tz);
+        // Zeitzone aus ioBroker system.config lesen (Fallback: Admin-Konfiguration, dann Europe/Berlin)
+        try {
+            const sysConf = await this.getForeignObjectAsync('system.config');
+            const sysTz   = sysConf && sysConf.common && sysConf.common.timezone;
+            const cfgTz   = this.config && this.config.timezone;
+            this.tz = sysTz || cfgTz || 'Europe/Berlin';
+            this._log('info', 'SYSTEM', 'Zeitzone: ' + this.tz + (sysTz ? ' (aus system.config)' : ' (aus Adapter-Config)'));
+        } catch(e) {
+            this.tz = (this.config && this.config.timezone) || 'Europe/Berlin';
+            this._log('warn', 'SYSTEM', 'system.config nicht lesbar, Fallback: ' + this.tz);
+        }
         await this._loadData();
 
         const port = (this.config && this.config.webPort) || 8095;
@@ -195,7 +232,7 @@ class KalenderAdapter extends utils.Adapter {
                 } catch(e) {}
             }
             // Alexa only if no triggerTime (time-triggered is handled by minute timer)
-            if (!ev.triggerTime && ev.alexaDatapoints && ev.alexaDatapoints.length > 0) {
+            if (!ev.triggerTime && !ev.time && ev.alexaDatapoints && ev.alexaDatapoints.length > 0) {
                 const msg = await this._resolveMessage(ev);
                 if (msg) await this._triggerAlexa(ev.alexaDatapoints, msg, ev.alexaVolumes);
             }
@@ -240,12 +277,52 @@ class KalenderAdapter extends utils.Adapter {
         const now   = localNow(this.tz);
         const hhmm  = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
         const today = todayStr(this.tz);
+
         for (const ev of this.events) {
-            if (!ev.triggerTime || ev.triggerTime !== hhmm) continue;
             if (ev.done) continue;
+            // Effektive Trigger-Zeit: triggerTime hat Vorrang, sonst time (Kalenderzeit = Trigger)
+            const tTime = ev.triggerTime || ev.time || '';
+            if (!tTime || tTime !== hhmm) continue;
             if (!occursOnDate(ev, today)) continue;
             await this._executeTimedEvent(ev).catch(e => this._log('warn', 'TRIGGER', e.message));
         }
+
+        // ── Erinnerungen prüfen ──────────────────────────────────────────────
+        for (const ev of this.events) {
+            if (ev.done || !ev.reminderBefore || !ev.time) continue;
+            if (!occursOnDate(ev, today)) continue;
+            const mins = this._reminderMinutes(ev.reminderBefore);
+            if (!mins) continue;
+            // Berechne Erinnerungszeit = ev.time - mins
+            const [h, m] = ev.time.split(':').map(Number);
+            const totalMins = h * 60 + m - mins;
+            if (totalMins < 0) continue;
+            const rh = String(Math.floor(totalMins / 60)).padStart(2,'0');
+            const rm = String(totalMins % 60).padStart(2,'0');
+            if ((rh + ':' + rm) !== hhmm) continue;
+            const label = this._reminderLabel(ev.reminderBefore);
+            const msg   = label + ' vor ' + ev.title + (ev.time ? ' um ' + ev.time + ' Uhr' : '');
+            this._log('info', 'TRIGGER', 'Erinnerung: ' + msg);
+            if (ev.alexaDatapoints && ev.alexaDatapoints.length > 0) {
+                await this._triggerAlexa(ev.alexaDatapoints, msg, ev.alexaVolumes);
+            }
+        }
+    }
+
+    _reminderMinutes(rb) {
+        if (!rb || !rb.value) return 0;
+        const v = parseInt(rb.value);
+        if (rb.unit === 'hours') return v * 60;
+        if (rb.unit === 'days')  return v * 1440;
+        return v; // minutes
+    }
+
+    _reminderLabel(rb) {
+        if (!rb || !rb.value) return '';
+        const v = rb.value;
+        if (rb.unit === 'hours')   return v + ' Stunde' + (v > 1 ? 'n' : '');
+        if (rb.unit === 'days')    return v + ' Tag' + (v > 1 ? 'e' : '');
+        return v + ' Minute' + (v > 1 ? 'n' : '');
     }
 
     // ── Timed Event Execution ─────────────────────────────────────────────────
@@ -713,6 +790,60 @@ class KalenderAdapter extends utils.Adapter {
                 json({ found: true, id: query.id, type: t, name: String(name), unit, states, min, max, currentVal: st ? st.val : null });
             } catch(e) {
                 json({ found: false, error: e.message });
+            }
+            return;
+        }
+
+        // ── Timezone Info ──
+        if (url === '/api/timezone-info' && method === 'GET') {
+            try {
+                // Linux timezone
+                let linuxTz  = 'unknown', linuxTime = '', ntpSync = false;
+                try {
+                    const tdctl = await execCmd('timedatectl status');
+                    const tzM   = tdctl.match(/Time zone:\s*([^\s(]+)/);
+                    const ntpM  = tdctl.match(/NTP service:\s*(active|inactive|running)/i) ||
+                                  tdctl.match(/Network time on:\s*(yes|no)/i) ||
+                                  tdctl.match(/systemd-timesyncd\.service.*active/i);
+                    if (tzM)  linuxTz  = tzM[1];
+                    if (ntpM) ntpSync  = /yes|active|running/i.test(ntpM[1] || ntpM[0]);
+                    linuxTime = await execCmd('date "+%Y-%m-%d %H:%M:%S %Z"');
+                } catch(e) {
+                    try { linuxTz = (await execCmd('cat /etc/timezone')).trim(); } catch(e2) {}
+                    try { linuxTime = await execCmd('date'); } catch(e3) {}
+                }
+                json({ linuxTz, linuxTime, ntpSync, iobTz: this.tz || 'unknown' });
+            } catch(e) {
+                json({ error: e.message, linuxTz: 'error', linuxTime: '', ntpSync: false, iobTz: this.tz || '' });
+            }
+            return;
+        }
+
+        // ── Timezone Sync (Linux → ioBroker tz) ──
+        if (url === '/api/timezone-sync' && method === 'POST') {
+            if (!this.tz) { json({ error: 'ioBroker-Zeitzone unbekannt' }, 400); return; }
+            try {
+                const out = await execCmd('sudo timedatectl set-timezone ' + this.tz);
+                this._log('info', 'SYSTEM', 'Linux-Zeitzone gesetzt: ' + this.tz);
+                json({ ok: true, tz: this.tz, output: out || 'Zeitzone gesetzt.' });
+            } catch(e) {
+                this._log('warn', 'SYSTEM', 'Zeitzone setzen fehlgeschlagen: ' + e.message);
+                json({ ok: false, error: e.message + '\nTipp: sudo-Rechte prüfen (timedatectl)' });
+            }
+            return;
+        }
+
+        // ── NTP Sync ──
+        if (url === '/api/ntp-sync' && method === 'POST') {
+            try {
+                await execCmd('sudo timedatectl set-ntp true');
+                // Force immediate sync if timedatectl supports it
+                try { await execCmd('sudo timedatectl set-ntp false && sudo timedatectl set-ntp true'); } catch(e2) {}
+                const out = await execCmd('timedatectl status');
+                this._log('info', 'SYSTEM', 'NTP-Sync aktiviert');
+                json({ ok: true, output: out.split('\n').slice(0,4).join('\n') });
+            } catch(e) {
+                json({ ok: false, error: e.message });
             }
             return;
         }
