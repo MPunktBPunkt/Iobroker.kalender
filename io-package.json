@@ -1,7 +1,7 @@
 {
   "common": {
     "name": "kalender",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "news": {
       "0.3.0": {
         "en": "Alexa integration, recurring events, birthday notifications",
@@ -37,7 +37,13 @@
     "allowInit": false,
     "compact": false,
     "connectionType": "local",
-    "dataSource": "push"
+    "dataSource": "push",
+    "localLink": "http://%ip%:8095",
+    "localLinks": {
+      "_default": {
+        "link": "http://%ip%:8095"
+      }
+    }
   },
   "native": {
     "webPort":     8095,
@@ -67,6 +73,11 @@
       "_id":   "data.birthdays",
       "type":  "state",
       "common": { "name": "Geburtstage JSON", "type": "string", "role": "json", "def": "[]", "read": true, "write": true }
+    },
+    {
+      "_id":   "data.icsUrls",
+      "type":  "state",
+      "common": { "name": "ICS Kalender URLs", "type": "string", "role": "json", "def": "[]", "read": true, "write": true }
     },
     {
       "_id":   "today.eventsToday",

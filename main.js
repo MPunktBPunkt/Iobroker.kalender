@@ -81,13 +81,13 @@ class KalenderAdapter extends utils.Adapter {
     // ── Lifecycle ──────────────────────────────────────────────────────────
 
     async onReady() {
+        try {
         try { this.pack = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')); }
         catch(e) { this.pack = { version: '0.4.0' }; }
 
         this.alexaDevices = [];
-        try { const raw = this.config.alexaDevices; if (raw) this.alexaDevices = JSON.parse(raw); } catch(e) {}
+        try { const raw = this.config && this.config.alexaDevices; if (raw) this.alexaDevices = JSON.parse(raw); } catch(e) {}
 
-        await this._initStates();
         await this._loadData();
 
         const port = (this.config && this.config.webPort) || 8095;
@@ -101,7 +101,12 @@ class KalenderAdapter extends utils.Adapter {
         }
 
         setTimeout(() => this._dailyCheck(), 3000);
-        this._log('info', 'SYSTEM', 'Adapter v' + this.pack.version + ' gestartet');
+
+        await this.setStateAsync('info.connection', true, true).catch(() => {});
+        this._log('info', 'SYSTEM', 'Adapter v' + this.pack.version + ' gestartet, Port ' + port);
+        } catch(e) {
+            this.log && this.log.error && this.log.error('onReady Fehler: ' + e.message);
+        }
     }
 
     async onUnload(callback) {
@@ -117,28 +122,6 @@ class KalenderAdapter extends utils.Adapter {
     onMessage(obj) {
         if (!obj || !obj.command) return;
         if (obj.command === 'ping' && obj.callback) this.sendTo(obj.from, obj.command, { result: 'pong' }, obj.callback);
-    }
-
-    // ── ioBroker States ────────────────────────────────────────────────────
-
-    async _initStates() {
-        const defs = [
-            { id: 'info.connection',      type: 'boolean', role: 'indicator.connected', def: true,  read: true,  write: false, name: 'Adapter verbunden' },
-            { id: 'info.lastCheck',       type: 'string',  role: 'text',               def: '',    read: true,  write: false, name: 'Letzte Tagesprüfung' },
-            { id: 'data.events',          type: 'string',  role: 'json',               def: '[]',  read: true,  write: true,  name: 'Kalendereinträge JSON' },
-            { id: 'data.birthdays',       type: 'string',  role: 'json',               def: '[]',  read: true,  write: true,  name: 'Geburtstage JSON' },
-            { id: 'data.icsUrls',         type: 'string',  role: 'json',               def: '[]',  read: true,  write: true,  name: 'ICS Kalender URLs' },
-            { id: 'today.eventsToday',    type: 'string',  role: 'json',               def: '[]',  read: true,  write: false, name: 'Heutige Termine' },
-            { id: 'today.birthdaysToday', type: 'string',  role: 'json',               def: '[]',  read: true,  write: false, name: 'Heutige Geburtstage' },
-        ];
-        for (const d of defs) {
-            await this.extendObjectAsync(d.id, {
-                type: 'state',
-                common: { name: d.name, type: d.type, role: d.role, def: d.def, read: d.read, write: d.write },
-                native: {}
-            }).catch(() => {});
-        }
-        await this.setStateAsync('info.connection', true, true).catch(() => {});
     }
 
     async _loadData() {
