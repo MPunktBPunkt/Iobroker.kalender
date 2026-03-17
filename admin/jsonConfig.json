@@ -1,0 +1,66 @@
+{
+  "type": "tabs",
+  "items": {
+    "tab_connection": {
+      "type": "tab",
+      "label": "Verbindung",
+      "items": {
+        "webPort": {
+          "type": "number",
+          "label": "Web-UI Port",
+          "help": "HTTP-Port für das Web-Dashboard (Standard: 8095)",
+          "min": 1,
+          "max": 65535,
+          "default": 8095,
+          "sm": 4
+        },
+        "defaultView": {
+          "type": "select",
+          "label": "Standard-Ansicht",
+          "options": [
+            { "label": "Monat", "value": "month" },
+            { "label": "Woche", "value": "week" },
+            { "label": "Tag",   "value": "day"   }
+          ],
+          "default": "month",
+          "sm": 4
+        },
+        "logBuffer": {
+          "type": "number",
+          "label": "Log-Puffer Einträge",
+          "min": 50,
+          "max": 5000,
+          "default": 500,
+          "sm": 4
+        }
+      }
+    },
+    "tab_alexa": {
+      "type": "tab",
+      "label": "Alexa",
+      "items": {
+        "info_alexa": {
+          "type": "staticText",
+          "text": "Alexa-Geräte können auch direkt im Web-Dashboard unter 'System > Alexa Geräte' konfiguriert werden. Dort können beliebig viele Geräte hinzugefügt werden."
+        },
+        "alexaDevices": {
+          "type": "textarea",
+          "label": "Alexa Geräte (JSON-Array)",
+          "help": "Format: [{\"name\":\"Wohnzimmer\",\"stateId\":\"alexa2.0.Echo-Devices.G0XXX.Commands.speak\"}]",
+          "default": "[]"
+        }
+      }
+    },
+    "tab_advanced": {
+      "type": "tab",
+      "label": "Erweitert",
+      "items": {
+        "verbose": {
+          "type": "checkbox",
+          "label": "Debug-Logging aktivieren",
+          "default": false
+        }
+      }
+    }
+  }
+}
