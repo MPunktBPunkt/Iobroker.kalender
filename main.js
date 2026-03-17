@@ -83,7 +83,7 @@ class KalenderAdapter extends utils.Adapter {
     async onReady() {
         try {
         try { this.pack = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')); }
-        catch(e) { this.pack = { version: '0.4.7' }; }
+        catch(e) { this.pack = { version: '0.4.8' }; }
 
         this.alexaDevices = [];
         try { const raw = this.config && this.config.alexaDevices; if (raw) this.alexaDevices = JSON.parse(raw); } catch(e) {}
@@ -220,16 +220,19 @@ class KalenderAdapter extends utils.Adapter {
     async _executeTimedEvent(ev) {
         this._log('info', 'TRIGGER', 'Zeit-Trigger ' + ev.triggerTime + ': ' + ev.title);
 
-        // Datenpunkt setzen (timed action)
-        if (ev.setDatapointId) {
-            let val = ev.setDatapointValue;
-            if (ev.setDatapointType === 'boolean')     val = (val === 'true' || val === true);
-            else if (ev.setDatapointType === 'number') val = parseFloat(val);
+        // Datenpunkt-Aktionen (neues dpActions-Array)
+        const actions = (ev.dpActions && ev.dpActions.length > 0) ? ev.dpActions :
+            (ev.setDatapointId ? [{ id: ev.setDatapointId, value: ev.setDatapointValue, type: ev.setDatapointType || 'boolean' }] : []);
+        for (const action of actions) {
+            if (!action.id) continue;
             try {
-                await this.setForeignStateAsync(ev.setDatapointId, val, false);
-                this._log('info', 'TRIGGER', 'Gesetzt: ' + ev.setDatapointId + ' = ' + String(val));
+                let val = action.value;
+                if (action.type === 'boolean')     val = (val === 'true' || val === true);
+                else if (action.type === 'number') val = parseFloat(val);
+                await this.setForeignStateAsync(action.id, val, false);
+                this._log('info', 'TRIGGER', 'Gesetzt: ' + action.id + ' = ' + String(val));
             } catch(e) {
-                this._log('warn', 'TRIGGER', 'Fehler ' + ev.setDatapointId + ': ' + e.message);
+                this._log('warn', 'TRIGGER', 'Fehler ' + action.id + ': ' + e.message);
             }
         }
 
@@ -631,6 +634,51 @@ class KalenderAdapter extends utils.Adapter {
                 json({ ok: true, title: ev.title });
             } catch(e) {
                 json({ error: e.message }, 400);
+            }
+            return;
+        }
+
+        // ── Object Browser ──
+        if (url === '/api/objects-search' && method === 'GET') {
+            const q = (query.q || '').trim();
+            if (!q || q.length < 2) { json({ objects: [] }); return; }
+            try {
+                // Search by pattern — add wildcard
+                const pattern = q.endsWith('*') ? q : q + '*';
+                const objs = await this.getForeignObjectsAsync(pattern, 'state');
+                const result = [];
+                for (const [id, obj] of Object.entries(objs || {})) {
+                    if (result.length >= 30) break;
+                    const t = obj && obj.common ? (obj.common.type || 'mixed') : 'mixed';
+                    const n = obj && obj.common && obj.common.name ? 
+                        (typeof obj.common.name === 'object' ? (obj.common.name.de || obj.common.name.en || id) : obj.common.name) : id;
+                    const unit = obj && obj.common && obj.common.unit ? obj.common.unit : '';
+                    result.push({ id, type: t, name: String(n), unit });
+                }
+                result.sort((a,b) => a.id.localeCompare(b.id));
+                json({ objects: result });
+            } catch(e) {
+                json({ objects: [], error: e.message });
+            }
+            return;
+        }
+
+        if (url === '/api/object-info' && method === 'GET') {
+            if (!query.id) { json({ error: 'id required' }, 400); return; }
+            try {
+                const obj = await this.getForeignObjectAsync(query.id);
+                if (!obj) { json({ found: false }); return; }
+                const t    = obj.common ? (obj.common.type || 'mixed') : 'mixed';
+                const name = obj.common && obj.common.name ?
+                    (typeof obj.common.name === 'object' ? (obj.common.name.de || obj.common.name.en || query.id) : obj.common.name) : query.id;
+                const unit = obj.common && obj.common.unit ? obj.common.unit : '';
+                const states = obj.common && obj.common.states ? obj.common.states : null;
+                const min    = obj.common && obj.common.min != null ? obj.common.min : null;
+                const max    = obj.common && obj.common.max != null ? obj.common.max : null;
+                const st = await this.getForeignStateAsync(query.id).catch(() => null);
+                json({ found: true, id: query.id, type: t, name: String(name), unit, states, min, max, currentVal: st ? st.val : null });
+            } catch(e) {
+                json({ found: false, error: e.message });
             }
             return;
         }

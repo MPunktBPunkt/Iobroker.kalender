@@ -1,7 +1,7 @@
 {
   "common": {
     "name": "kalender",
-    "version": "0.4.7",
+    "version": "0.4.8",
     "news": {
       "0.3.0": {
         "en": "Alexa integration, recurring events, birthday notifications",
