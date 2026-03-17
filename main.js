@@ -571,8 +571,35 @@ class KalenderAdapter extends utils.Adapter {
         if (url === '/api/alexa' && method === 'POST') {
             const body = JSON.parse(await this._readBody(req));
             this.alexaDevices = body.devices || [];
-            this._log('info', 'ALEXA', 'Geräte aktualisiert: ' + this.alexaDevices.length);
+            this._log('info', 'ALEXA', 'Ger\u00E4te aktualisiert: ' + this.alexaDevices.length);
             json({ ok: true });
+            return;
+        }
+
+        // ── Alexa Auto-Discover ──
+        if (url === '/api/alexa-discover' && method === 'GET') {
+            try {
+                const objs = await this.getForeignObjectsAsync('alexa2.0.Echo-Devices.*', 'device');
+                const devices = [];
+                for (const id of Object.keys(objs || {})) {
+                    const obj = objs[id];
+                    if (!obj || !obj.common) continue;
+                    // id: alexa2.0.Echo-Devices.G091AA10135600WP
+                    const parts = id.split('.');
+                    if (parts.length !== 4) continue;
+                    const serial = parts[3];
+                    if (!serial || serial.length < 8) continue;
+                    const name = obj.common.name ? String(obj.common.name) : serial;
+                    const stateId = 'alexa2.0.Echo-Devices.' + serial + '.Commands.speak';
+                    devices.push({ name, serial, stateId });
+                }
+                devices.sort((a,b) => a.name.localeCompare(b.name));
+                this._log('info', 'ALEXA', 'Discover: ' + devices.length + ' Ger\u00E4te');
+                json({ devices });
+            } catch(e) {
+                this._log('warn', 'ALEXA', 'Discover-Fehler: ' + e.message);
+                json({ devices: [], error: e.message });
+            }
             return;
         }
 
