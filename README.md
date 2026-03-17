@@ -1,6 +1,6 @@
 # iobroker.kalender
 
-[![Version](https://img.shields.io/badge/version-0.4.0-blue)](https://github.com/MPunktBPunkt/iobroker.kalender)
+[![Version](https://img.shields.io/badge/version-0.4.1-blue)](https://github.com/MPunktBPunkt/iobroker.kalender)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D16-brightgreen)](https://nodejs.org)
 
@@ -21,6 +21,22 @@ Vollständiger **Kalender-Adapter** für ioBroker mit Web-Dashboard, Alexa-Sprac
 | 📆 Google Kalender | ICS/iCal URL Import (read-only, stündlich aktualisiert) |
 | 🗣️ Alexa | Mehrere Geräte konfigurierbar |
 | 📤 Import / Export | JSON Backup |
+
+---
+
+## Installation
+
+```bash
+iobroker url https://github.com/MPunktBPunkt/iobroker.kalender
+iobroker add kalender
+```
+
+## Update
+
+```bash
+iobroker url https://github.com/MPunktBPunkt/iobroker.kalender
+iobroker restart kalender
+```
 
 ---
 
