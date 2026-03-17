@@ -1,4 +1,4 @@
-# Schnittstellen.md — iobroker.kalender v0.4.5
+# Schnittstellen.md — iobroker.kalender v0.5.0
 
 ## HTTP REST-API (Port 8095)
 
@@ -220,3 +220,38 @@ Kein Eintrag = Lautstärke wird nicht verändert.
   ]
 }
 ```
+
+---
+
+## GET /api/objects-search?q=<query> (v0.4.8+)
+Sucht ioBroker States per Wildcard-Pattern (max. 30 Ergebnisse).
+```json
+{ "objects": [{ "id": "pool.0.pump", "type": "boolean", "name": "Poolpumpe", "unit": "" }] }
+```
+
+## GET /api/object-info?id=<stateId> (v0.4.8+)
+Lädt Typ, Name, Einheit und aktuellen Wert eines States.
+```json
+{ "found": true, "id": "pool.0.pump", "type": "boolean", "name": "Poolpumpe",
+  "unit": "", "states": null, "min": null, "max": null, "currentVal": true }
+```
+
+## POST /api/trigger-event (v0.4.6+)
+Führt einen einzelnen Event sofort aus (Alexa + Datenpunkte).
+```json
+Request:  { "id": "lx8abc123" }
+Response: { "ok": true, "title": "Pool Morgenroutine" }
+```
+
+## dpActions Array (v0.4.8+)
+Mehrere Datenpunkt-Aktionen pro Event:
+```json
+"dpActions": [
+  { "id": "pool.0.pump.switch", "type": "boolean", "value": "true",  "name": "Pumpe", "unit": "" },
+  { "id": "pool.0.heater",      "type": "boolean", "value": "false", "name": "Heizer","unit": "" }
+]
+```
+
+## Zeitzone (v0.5.0+)
+Konfigurierbar in Admin-UI. Wird in `/api/data` als `timezone`-Feld zurückgegeben.
+Alle Zeitvergleiche (minuteTick, dailyCheck, todayStr) arbeiten in der konfigurierten Zeitzone.

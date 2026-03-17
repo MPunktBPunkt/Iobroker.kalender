@@ -1,7 +1,7 @@
 {
   "common": {
     "name": "kalender",
-    "version": "0.4.9",
+    "version": "0.5.0",
     "news": {
       "0.3.0": {
         "en": "Alexa integration, recurring events, birthday notifications",
@@ -21,8 +21,17 @@
       "de": "Kalender-Adapter mit Terminen, Aufgaben, Geburtstagen, Alexa-Integration und Web-Dashboard.",
       "en": "Calendar adapter with events, tasks, birthdays, Alexa integration and web dashboard."
     },
-    "authors": ["MPunktBPunkt"],
-    "keywords": ["calendar","kalender","tasks","birthdays","alexa","iobroker"],
+    "authors": [
+      "MPunktBPunkt"
+    ],
+    "keywords": [
+      "calendar",
+      "kalender",
+      "tasks",
+      "birthdays",
+      "alexa",
+      "iobroker"
+    ],
     "license": "MIT",
     "platform": "Javascript/Node.js",
     "main": "main.js",
@@ -32,7 +41,11 @@
     "icon": "admin/kalender.svg",
     "readme": "https://github.com/MPunktBPunkt/iobroker.kalender/blob/main/README.md",
     "loglevel": "info",
-    "dependencies": [{ "js-controller": ">=5.0.0" }],
+    "dependencies": [
+      {
+        "js-controller": ">=5.0.0"
+      }
+    ],
     "globalDependencies": [],
     "allowInit": false,
     "compact": false,
@@ -46,48 +59,98 @@
     }
   },
   "native": {
-    "webPort":     8095,
-    "logBuffer":   500,
+    "webPort": 8095,
+    "logBuffer": 500,
     "defaultView": "month",
     "alexaDevices": "[]",
-    "verbose":     false
+    "verbose": false,
+    "timezone": "Europe/Berlin"
   },
   "objects": [],
   "instanceObjects": [
     {
-      "_id":   "info.connection",
-      "type":  "state",
-      "common": { "name": "Adapter verbunden", "type": "boolean", "role": "indicator.connected", "def": false, "read": true, "write": false }
+      "_id": "info.connection",
+      "type": "state",
+      "common": {
+        "name": "Adapter verbunden",
+        "type": "boolean",
+        "role": "indicator.connected",
+        "def": false,
+        "read": true,
+        "write": false
+      }
     },
     {
-      "_id":   "info.lastCheck",
-      "type":  "state",
-      "common": { "name": "Letzte Tagesprüfung", "type": "string", "role": "text", "def": "", "read": true, "write": false }
+      "_id": "info.lastCheck",
+      "type": "state",
+      "common": {
+        "name": "Letzte Tagesprüfung",
+        "type": "string",
+        "role": "text",
+        "def": "",
+        "read": true,
+        "write": false
+      }
     },
     {
-      "_id":   "data.events",
-      "type":  "state",
-      "common": { "name": "Kalendereinträge JSON", "type": "string", "role": "json", "def": "[]", "read": true, "write": true }
+      "_id": "data.events",
+      "type": "state",
+      "common": {
+        "name": "Kalendereinträge JSON",
+        "type": "string",
+        "role": "json",
+        "def": "[]",
+        "read": true,
+        "write": true
+      }
     },
     {
-      "_id":   "data.birthdays",
-      "type":  "state",
-      "common": { "name": "Geburtstage JSON", "type": "string", "role": "json", "def": "[]", "read": true, "write": true }
+      "_id": "data.birthdays",
+      "type": "state",
+      "common": {
+        "name": "Geburtstage JSON",
+        "type": "string",
+        "role": "json",
+        "def": "[]",
+        "read": true,
+        "write": true
+      }
     },
     {
-      "_id":   "data.icsUrls",
-      "type":  "state",
-      "common": { "name": "ICS Kalender URLs", "type": "string", "role": "json", "def": "[]", "read": true, "write": true }
+      "_id": "data.icsUrls",
+      "type": "state",
+      "common": {
+        "name": "ICS Kalender URLs",
+        "type": "string",
+        "role": "json",
+        "def": "[]",
+        "read": true,
+        "write": true
+      }
     },
     {
-      "_id":   "today.eventsToday",
-      "type":  "state",
-      "common": { "name": "Heutige Termine", "type": "string", "role": "json", "def": "[]", "read": true, "write": false }
+      "_id": "today.eventsToday",
+      "type": "state",
+      "common": {
+        "name": "Heutige Termine",
+        "type": "string",
+        "role": "json",
+        "def": "[]",
+        "read": true,
+        "write": false
+      }
     },
     {
-      "_id":   "today.birthdaysToday",
-      "type":  "state",
-      "common": { "name": "Heutige Geburtstage", "type": "string", "role": "json", "def": "[]", "read": true, "write": false }
+      "_id": "today.birthdaysToday",
+      "type": "state",
+      "common": {
+        "name": "Heutige Geburtstage",
+        "type": "string",
+        "role": "json",
+        "def": "[]",
+        "read": true,
+        "write": false
+      }
     }
   ]
 }

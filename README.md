@@ -1,6 +1,6 @@
 # iobroker.kalender
 
-[![Version](https://img.shields.io/badge/version-0.4.5-blue)](https://github.com/MPunktBPunkt/iobroker.kalender)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue)](https://github.com/MPunktBPunkt/iobroker.kalender)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D16-brightgreen)](https://nodejs.org)
 
@@ -95,6 +95,32 @@ Die Seriennummer findet man in ioBroker → Objects → alexa2.0.Echo-Devices.
 ---
 
 ## Changelog
+
+### 0.5.0 (2026-03-17)
+- Zeitzone-Einstellung in Admin-Konfiguration (Standard: Europe/Berlin)
+- Alle Zeitvergleiche (Trigger, Tagescheck) timezone-aware via Intl.DateTimeFormat
+- Zeitzone wird in Kopfzeile angezeigt
+
+### 0.4.9 (2026-03-17)
+- Bugfix: Syntax-Fehler in app.js behoben (Webinterface reagierte nicht)
+- Bugfix: loadDpInfoById Hilfsfunktion für querySelector-Problem
+
+### 0.4.8 (2026-03-17)
+- Datenpunkt-Aktionen: beliebig viele per + Datenpunkt (dpActions-Array)
+- Auto-Typ-Erkennung beim Laden der State-ID aus ioBroker
+- Bool: true/false Dropdown, Zahl: Zahlenfeld, Text: Textfeld
+- /api/objects-search und /api/object-info Endpunkte
+- Filter Aufgaben-Tab: vergangene Einmaltermine nur noch unter Erledigt
+
+### 0.4.7 (2026-03-17)
+- Bugfix: Kalenderbreite verschiebt sich bei Terminen nicht mehr
+- CSS: minmax(0,1fr), overflow:hidden, display:block auf event-chip
+
+### 0.4.6 (2026-03-17)
+- Uhrzeit in Kopfzeile (sekundengenau, Browserzeit)
+- ▶ Jetzt-Ausführen-Button auf jeder Aufgabenkarte
+- Warnhinweis im Modal: ohne triggerTime feuert Alexa erst um 00:01 Uhr
+- /api/trigger-event Endpunkt für manuelle Sofortausführung
 
 ### 0.4.5 (2026-03-17)
 - Lautstärke-Slider (0-100%) pro Alexa-Gerät pro Aufgabe

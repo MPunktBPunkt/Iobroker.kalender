@@ -11,8 +11,35 @@ function genId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2, 8);
 }
 
-function todayStr() {
-    const t = new Date();
+// Timezone-aware time helpers
+function localNow(tz) {
+    // Returns a Date-like object with hours/minutes/date in the given IANA timezone
+    const now = new Date();
+    if (!tz || tz === 'UTC') return now;
+    try {
+        const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: tz,
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hour12: false
+        }).formatToParts(now);
+        const get = (t) => parseInt(parts.find(p => p.type === t).value);
+        return {
+            getFullYear: () => get('year'),
+            getMonth:    () => get('month') - 1,
+            getDate:     () => get('day'),
+            getHours:    () => { const h = get('hour'); return h === 24 ? 0 : h; },
+            getMinutes:  () => get('minute'),
+            getSeconds:  () => get('second'),
+            getFullDate: () => new Date(get('year'), get('month')-1, get('day'))
+        };
+    } catch(e) {
+        return now;  // fallback
+    }
+}
+
+function todayStr(tz) {
+    const t = localNow(tz);
     return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0');
 }
 
@@ -83,11 +110,13 @@ class KalenderAdapter extends utils.Adapter {
     async onReady() {
         try {
         try { this.pack = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')); }
-        catch(e) { this.pack = { version: '0.4.9' }; }
+        catch(e) { this.pack = { version: '0.5.0' }; }
 
         this.alexaDevices = [];
         try { const raw = this.config && this.config.alexaDevices; if (raw) this.alexaDevices = JSON.parse(raw); } catch(e) {}
 
+        this.tz = (this.config && this.config.timezone) || 'Europe/Berlin';
+        this._log('info', 'SYSTEM', 'Zeitzone: ' + this.tz);
         await this._loadData();
 
         const port = (this.config && this.config.webPort) || 8095;
@@ -138,13 +167,17 @@ class KalenderAdapter extends utils.Adapter {
     // ── Daily Check ─────────────────────────────────────────────────────────
 
     _scheduleDaily() {
-        const now  = new Date();
-        const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 1, 0);
-        this.dailyTimer = setTimeout(() => { this._dailyCheck(); this._scheduleDaily(); }, next - now);
+        const now   = localNow(this.tz);
+        const msNow = Date.now();
+        // Calculate ms until 00:01 local time
+        const todayBase = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 1, 0);
+        const nextLocal = new Date(todayBase.getTime() + 24 * 3600000);
+        const msUntil   = nextLocal - msNow;
+        this.dailyTimer = setTimeout(() => { this._dailyCheck(); this._scheduleDaily(); }, msUntil > 0 ? msUntil : 60000);
     }
 
     async _dailyCheck() {
-        const today = todayStr();
+        const today = todayStr(this.tz);
         this._log('info', 'CHECK', 'Tagesprüfung für ' + today);
 
         const eventsToday = this.events.filter(e => !e.done && occursOnDate(e, today));
@@ -204,9 +237,9 @@ class KalenderAdapter extends utils.Adapter {
     }
 
     async _minuteTick() {
-        const now   = new Date();
+        const now   = localNow(this.tz);
         const hhmm  = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
-        const today = todayStr();
+        const today = todayStr(this.tz);
         for (const ev of this.events) {
             if (!ev.triggerTime || ev.triggerTime !== hhmm) continue;
             if (ev.done) continue;
@@ -464,6 +497,7 @@ class KalenderAdapter extends utils.Adapter {
                 icsUrls:      this.icsUrls,
                 alexaDevices: this.alexaDevices,
                 version:      this.pack.version,
+                timezone:     this.tz || 'Europe/Berlin',
                 lastCheck:    lastCheck ? lastCheck.val || '' : ''
             });
             return;
