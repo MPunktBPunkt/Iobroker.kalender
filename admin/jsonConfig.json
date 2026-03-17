@@ -18,9 +18,18 @@
           "type": "select",
           "label": "Standard-Ansicht",
           "options": [
-            { "label": "Monat", "value": "month" },
-            { "label": "Woche", "value": "week" },
-            { "label": "Tag",   "value": "day"   }
+            {
+              "label": "Monat",
+              "value": "month"
+            },
+            {
+              "label": "Woche",
+              "value": "week"
+            },
+            {
+              "label": "Tag",
+              "value": "day"
+            }
           ],
           "default": "month",
           "sm": 4
@@ -61,6 +70,42 @@
           "default": false
         }
       }
+    },
+    "timezone": {
+      "type": "select",
+      "label": "Zeitzone",
+      "options": [
+        {
+          "label": "Europe/Berlin (Deutschland)",
+          "value": "Europe/Berlin"
+        },
+        {
+          "label": "Europe/Vienna (Österreich)",
+          "value": "Europe/Vienna"
+        },
+        {
+          "label": "Europe/Zurich (Schweiz)",
+          "value": "Europe/Zurich"
+        },
+        {
+          "label": "Europe/London",
+          "value": "Europe/London"
+        },
+        {
+          "label": "UTC",
+          "value": "UTC"
+        },
+        {
+          "label": "America/New_York",
+          "value": "America/New_York"
+        },
+        {
+          "label": "America/Los_Angeles",
+          "value": "America/Los_Angeles"
+        }
+      ],
+      "default": "Europe/Berlin",
+      "sm": 6
     }
   }
 }

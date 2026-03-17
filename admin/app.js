@@ -1,4 +1,4 @@
-/* iobroker.kalender — Browser-App v0.4.9 */
+/* iobroker.kalender — Browser-App v0.5.0 */
 'use strict';
 
 // ── Global State ─────────────────────────────────────────────────────────────
@@ -121,7 +121,8 @@ function updateHeader(d) {
     document.getElementById('hdr-bd').textContent    = birthdays.length;
     const ver = d && d.version ? 'v' + d.version : '';
     const lc  = d && d.lastCheck ? ' | Prüfung: ' + new Date(d.lastCheck).toLocaleString('de-DE') : '';
-    document.getElementById('hdr-sub').textContent = ver + lc;
+    var tz  = d && d.timezone ? ' | ' + d.timezone : '';
+    document.getElementById('hdr-sub').textContent = ver + lc + tz;
 }
 
 function tickClock() {
