@@ -1,4 +1,4 @@
-# Schnittstellen.md — iobroker.kalender v0.4.0
+# Schnittstellen.md — iobroker.kalender v0.4.5
 
 ## HTTP REST-API (Port 8095)
 
@@ -190,3 +190,33 @@ State-Pfad: `alexa2.0.Echo-Devices.<SERIAL>.Commands.speak`
 Seriennummer aus ioBroker Objects → alexa2.0.Echo-Devices.
 
 Alternativ `announcement` statt `speak` für Ansagen mit Gong.
+
+---
+
+## Alexa Volume (v0.4.5)
+
+`alexaVolumes` im Event/Birthday-Objekt: `{ "<stateId>": <0-100> }`
+
+Beispiel:
+```json
+"alexaVolumes": {
+  "alexa2.0.Echo-Devices.G091AA10135600WP.Commands.speak": 60,
+  "alexa2.0.Echo-Devices.G070VM098487295E.Commands.speak": 80
+}
+```
+
+Kein Eintrag = Lautstärke wird nicht verändert.
+
+## GET /api/alexa-discover (v0.4.3+)
+```json
+{
+  "devices": [
+    {
+      "name":          "Echo Dot Bad",
+      "serial":        "G091AA10135600WP",
+      "stateId":       "alexa2.0.Echo-Devices.G091AA10135600WP.Commands.speak",
+      "volumeStateId": "alexa2.0.Echo-Devices.G091AA10135600WP.Commands.volume"
+    }
+  ]
+}
+```

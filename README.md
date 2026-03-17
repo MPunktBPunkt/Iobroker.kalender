@@ -1,6 +1,6 @@
 # iobroker.kalender
 
-[![Version](https://img.shields.io/badge/version-0.4.1-blue)](https://github.com/MPunktBPunkt/iobroker.kalender)
+[![Version](https://img.shields.io/badge/version-0.4.5-blue)](https://github.com/MPunktBPunkt/iobroker.kalender)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D16-brightgreen)](https://nodejs.org)
 
@@ -95,6 +95,24 @@ Die Seriennummer findet man in ioBroker → Objects → alexa2.0.Echo-Devices.
 ---
 
 ## Changelog
+
+### 0.4.5 (2026-03-17)
+- Lautstärke-Slider (0-100%) pro Alexa-Gerät pro Aufgabe
+- Volume-State wird vor Speak gesetzt (400ms Pause)
+
+### 0.4.4 (2026-03-17)
+- Alexa-Picker direkt im Aufgaben-Modal mit Auto-Discover
+- Verbesserte Kalenderansicht: Farbpunkte, Wochenend-Highlight, Uhrzeit-Linie
+
+### 0.4.3 (2026-03-17)
+- Alexa Geräte automatisch aus ioBroker laden (Gerätename statt GUID)
+
+### 0.4.2 (2026-03-17)
+- Fix: 404 beim Öffnen über Admin-UI behoben (admin/index.html)
+
+### 0.4.1 (2026-03-17)
+- Fix: SIGKILL beim Start behoben
+- Fix: Direktlink im Admin-UI (localLink)
 
 ### 0.4.0 (2026-03-17)
 - **Neu:** Zeit-Trigger (HH:MM) für täglich exakte Ausführung

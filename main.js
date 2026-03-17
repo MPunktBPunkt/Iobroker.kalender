@@ -83,7 +83,7 @@ class KalenderAdapter extends utils.Adapter {
     async onReady() {
         try {
         try { this.pack = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')); }
-        catch(e) { this.pack = { version: '0.4.0' }; }
+        catch(e) { this.pack = { version: '0.4.5' }; }
 
         this.alexaDevices = [];
         try { const raw = this.config && this.config.alexaDevices; if (raw) this.alexaDevices = JSON.parse(raw); } catch(e) {}
@@ -164,7 +164,7 @@ class KalenderAdapter extends utils.Adapter {
             // Alexa only if no triggerTime (time-triggered is handled by minute timer)
             if (!ev.triggerTime && ev.alexaDatapoints && ev.alexaDatapoints.length > 0) {
                 const msg = await this._resolveMessage(ev);
-                if (msg) await this._triggerAlexa(ev.alexaDatapoints, msg);
+                if (msg) await this._triggerAlexa(ev.alexaDatapoints, msg, ev.alexaVolumes);
             }
         }
 
@@ -179,13 +179,13 @@ class KalenderAdapter extends utils.Adapter {
             const age = new Date().getFullYear() - new Date(bd.date + 'T12:00:00').getFullYear();
             const msg = (bd.alexaMessage || 'Heute hat {name} Geburtstag! Er wird {age} Jahre alt.')
                 .replace('{age}', age).replace('{name}', bd.name);
-            if (bd.alexaDatapoints && bd.alexaDatapoints.length > 0) await this._triggerAlexa(bd.alexaDatapoints, msg);
+            if (bd.alexaDatapoints && bd.alexaDatapoints.length > 0) await this._triggerAlexa(bd.alexaDatapoints, msg, bd.alexaVolumes);
         }
         for (const bd of bdSoon) {
             const days = birthdayDaysUntil(bd);
             const age  = new Date().getFullYear() - new Date(bd.date + 'T12:00:00').getFullYear() + 1;
             const msg  = 'In ' + days + ' Tag' + (days === 1 ? '' : 'en') + ' hat ' + bd.name + ' Geburtstag. Er wird ' + age + ' Jahre alt.';
-            if (bd.alexaDatapoints && bd.alexaDatapoints.length > 0) await this._triggerAlexa(bd.alexaDatapoints, msg);
+            if (bd.alexaDatapoints && bd.alexaDatapoints.length > 0) await this._triggerAlexa(bd.alexaDatapoints, msg, bd.alexaVolumes);
         }
 
         await this.setStateAsync('info.lastCheck', new Date().toISOString(), true).catch(() => {});
@@ -279,9 +279,25 @@ class KalenderAdapter extends utils.Adapter {
         return msg.trim();
     }
 
-    async _triggerAlexa(datapoints, message) {
+    async _triggerAlexa(datapoints, message, volumes) {
+        // volumes = { [stateId]: number } — Lautstärke pro Gerät (aus Event-Konfiguration)
         for (const sid of datapoints) {
             try {
+                // Lautstärke: aus Event-volumes-Map, Fallback: alexaDevices-globale Config
+                const devCfg     = this.alexaDevices.find(d => d.stateId === sid);
+                const volFromEvt = (volumes && volumes[sid] != null) ? parseInt(volumes[sid]) : NaN;
+                const volFromDev = (devCfg && devCfg.volume != null && devCfg.volume !== '') ? parseInt(devCfg.volume) : NaN;
+                const vol        = !isNaN(volFromEvt) ? volFromEvt : volFromDev;
+                if (!isNaN(vol) && vol >= 0 && vol <= 100) {
+                    const volStateId = sid.replace('.Commands.speak', '.Commands.volume');
+                    try {
+                        await this.setForeignStateAsync(volStateId, vol, false);
+                        this._log('info', 'ALEXA', 'Volume: ' + volStateId + ' = ' + vol + '%');
+                        await new Promise(r => setTimeout(r, 400));
+                    } catch(ve) {
+                        this._log('warn', 'ALEXA', 'Volume-Fehler: ' + ve.message);
+                    }
+                }
                 await this.setForeignStateAsync(sid, message, false);
                 this._log('info', 'ALEXA', sid + ': ' + String(message).substring(0, 100));
             } catch(e) {
@@ -590,8 +606,9 @@ class KalenderAdapter extends utils.Adapter {
                     const serial = parts[3];
                     if (!serial || serial.length < 8) continue;
                     const name = obj.common.name ? String(obj.common.name) : serial;
-                    const stateId = 'alexa2.0.Echo-Devices.' + serial + '.Commands.speak';
-                    devices.push({ name, serial, stateId });
+                    const stateId       = 'alexa2.0.Echo-Devices.' + serial + '.Commands.speak';
+                    const volumeStateId = 'alexa2.0.Echo-Devices.' + serial + '.Commands.volume';
+                    devices.push({ name, serial, stateId, volumeStateId });
                 }
                 devices.sort((a,b) => a.name.localeCompare(b.name));
                 this._log('info', 'ALEXA', 'Discover: ' + devices.length + ' Ger\u00E4te');
