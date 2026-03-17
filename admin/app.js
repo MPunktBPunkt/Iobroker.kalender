@@ -1,4 +1,4 @@
-/* iobroker.kalender — Browser-App v0.4.8 */
+/* iobroker.kalender — Browser-App v0.4.9 */
 'use strict';
 
 // ── Global State ─────────────────────────────────────────────────────────────
@@ -826,24 +826,24 @@ function buildDpActionsHtml(actions) {
         }).join('');
         var valInput = '';
         if (a.type === 'boolean') {
-            valInput = '<select class="seg-input" data-idx="' + i + '" onchange="updateDpAction(' + i + ','value',this.value)">' +
+            valInput = '<select class="seg-input" data-idx="' + i + '" onchange="updateDpAction(' + i + ',\'value\',this.value)">' +
                 '<option value="true"' + (String(a.value) === 'true' ? ' selected' : '') + '>true</option>' +
                 '<option value="false"' + (String(a.value) === 'false' ? ' selected' : '') + '>false</option>' +
                 '</select>';
         } else if (a.type === 'number') {
             valInput = '<input class="seg-input" type="number" step="any" placeholder="Zahl" value="' + esc(String(a.value)) + '" ' +
-                'data-idx="' + i + '" oninput="updateDpAction(' + i + ','value',this.value)">';
+                'data-idx="' + i + '" oninput="updateDpAction(' + i + ',\'value\',this.value)">';
         } else {
             valInput = '<input class="seg-input" type="text" placeholder="Text" value="' + esc(String(a.value)) + '" ' +
-                'data-idx="' + i + '" oninput="updateDpAction(' + i + ','value',this.value)">';
+                'data-idx="' + i + '" oninput="updateDpAction(' + i + ',\'value\',this.value)">';
         }
         return '<div class="seg-row" style="align-items:flex-start;">' +
             '<div class="seg-inner" style="gap:6px;">' +
             '<div style="display:flex;gap:6px;align-items:center;">' +
             '<input class="seg-input" type="text" placeholder="State-ID  z.B. pool.0.pump" value="' + esc(a.id) + '" style="flex:1;" ' +
-            'data-idx="' + i + '" oninput="updateDpAction(' + i + ','id',this.value)" ' +
+            'data-idx="' + i + '" oninput="updateDpAction(' + i + ',\'id\',this.value)" ' +
             'onblur="loadDpInfo(' + i + ',this.value)">' +
-            '<button class="btn btn-ghost btn-sm" style="flex-shrink:0;" data-idx="' + i + '" onclick="loadDpInfo(parseInt(this.dataset.idx), document.querySelector('#dp-actions-list .seg-row:nth-child(' + (i+1) + ') input[type=text]').value)">\uD83D\uDD04</button>' +
+            '<button class="btn btn-ghost btn-sm" style="flex-shrink:0;" data-idx="' + i + '" onclick="loadDpInfoById(parseInt(this.dataset.idx))">\uD83D\uDD04</button>' +
             '</div>' +
             (a.name ? '<div style="font-size:10px;color:var(--green);">' + esc(a.name) + (a.unit ? ' [' + esc(a.unit) + ']' : '') + '</div>' : '') +
             '<div style="display:flex;gap:6px;align-items:center;">' +
@@ -878,6 +878,14 @@ function changeDpType(idx, newType) {
     else if (newType === 'number') editingDpActions[idx].value = '0';
     else editingDpActions[idx].value = '';
     document.getElementById('dp-actions-list').innerHTML = buildDpActionsHtml(editingDpActions);
+}
+
+function loadDpInfoById(idx) {
+    // Find the state-id input for this action row
+    var rows = document.querySelectorAll('#dp-actions-list .seg-row');
+    if (!rows[idx]) return;
+    var input = rows[idx].querySelector('input[type=text]');
+    if (input && input.value) loadDpInfo(idx, input.value);
 }
 
 async function loadDpInfo(idx, stateId) {
