@@ -820,10 +820,19 @@ function renderSystem() {
 
         // Alexa
         '<div class="card">' +
-        '<div class="card-header"><div class="card-title">\uD83D\uDDE3 Alexa Ger\u00E4te</div></div>' +
-        '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">State-Pfad: <code style="background:var(--bg3);padding:2px 6px;border-radius:3px;">alexa2.0.Echo-Devices.&lt;SERIAL&gt;.Commands.speak</code></div>' +
+        '<div class="card-header"><div class="card-title">\uD83D\uDDE3 Alexa Ger\u00E4te</div>' +
+        '<button class="btn btn-ghost btn-sm" onclick="discoverAlexaDevs()" id="btn-discover">\uD83D\uDD0D Automatisch erkennen</button></div>' +
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Liest alle Echo-Devices aus dem alexa2-Adapter. State-Pfad: <code style="background:var(--bg3);padding:2px 6px;border-radius:3px;">...Commands.speak</code></div>' +
+        '<div id="alexa-discover-result" style="display:none;margin-bottom:12px;">' +
+        '<select id="alexa-discover-sel" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 10px;font-size:13px;width:100%;">' +
+        '<option value="">-- Ger\u00E4t ausw\u00E4hlen --</option>' +
+        '</select>' +
+        '<button class="btn btn-success btn-sm" onclick="addAlexaFromDiscover()" style="margin-top:6px;">+ Ausgew\u00E4hltes Ger\u00E4t hinzuf\u00FCgen</button>' +
+        '</div>' +
         '<div id="alexa-dev-list">' + renderAlexaDevList() + '</div>' +
-        '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">' +
+        '<hr style="border-color:var(--border);margin:12px 0;">' +
+        '<div style="font-size:11px;color:var(--dim);margin-bottom:6px;">Manuell hinzuf\u00FCgen:</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
         '<input id="new-alexa-name" type="text" placeholder="Name (z.B. K\u00FCche Echo)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:13px;flex:1;min-width:120px;">' +
         '<input id="new-alexa-state" type="text" placeholder="State-ID (alexa2.0.Echo-Devices.GXXXXX.Commands.speak)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:13px;flex:3;min-width:200px;">' +
         '<button class="btn btn-primary btn-sm" onclick="addAlexaDev()">+ Hinzuf\u00FCgen</button>' +
@@ -859,6 +868,56 @@ function renderSystem() {
         '<div id="ver-info">Lade...</div></div>';
 
     loadVersion();
+}
+
+async function discoverAlexaDevs() {
+    const btn = document.getElementById('btn-discover');
+    const res_div = document.getElementById('alexa-discover-result');
+    const sel = document.getElementById('alexa-discover-sel');
+    if (!res_div || !sel) return;
+    if (btn) { btn.textContent = '\u23F3 Suche...'; btn.disabled = true; }
+    try {
+        const d = await api('GET', '/api/alexa-discover');
+        const devs = d.devices || [];
+        // Remove options except placeholder
+        while (sel.options.length > 1) sel.remove(1);
+        if (devs.length === 0) {
+            sel.options[0].text = '-- Keine Ger\u00E4te gefunden (alexa2-Adapter aktiv?) --';
+        } else {
+            sel.options[0].text = '-- Ger\u00E4t ausw\u00E4hlen (' + devs.length + ' gefunden) --';
+            devs.forEach(dev => {
+                const opt = document.createElement('option');
+                opt.value = JSON.stringify(dev);
+                opt.text = dev.name + '  [' + dev.serial + ']';
+                sel.appendChild(opt);
+            });
+        }
+        res_div.style.display = 'block';
+        // Auto-select if only one
+        if (devs.length === 1) sel.selectedIndex = 1;
+    } catch(e) {
+        alert('Fehler beim Suchen: ' + e.message);
+    } finally {
+        if (btn) { btn.textContent = '\uD83D\uDD0D Automatisch erkennen'; btn.disabled = false; }
+    }
+}
+
+function addAlexaFromDiscover() {
+    const sel = document.getElementById('alexa-discover-sel');
+    if (!sel || !sel.value) { alert('Bitte ein Ger\u00E4t ausw\u00E4hlen.'); return; }
+    try {
+        const dev = JSON.parse(sel.value);
+        // Check not already added
+        if (alexaDevs.find(d => d.stateId === dev.stateId)) {
+            alert(dev.name + ' ist bereits in der Liste.');
+            return;
+        }
+        alexaDevs.push({ name: dev.name, stateId: dev.stateId });
+        saveAlexaDevs();
+        document.getElementById('alexa-dev-list').innerHTML = renderAlexaDevList();
+        // Reset dropdown
+        sel.selectedIndex = 0;
+    } catch(e) { alert('Fehler: ' + e.message); }
 }
 
 function renderAlexaDevList() {
