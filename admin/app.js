@@ -1,4 +1,4 @@
-/* iobroker.kalender — Browser-App v0.4.5 */
+/* iobroker.kalender — Browser-App v0.4.7 */
 'use strict';
 
 // ── Global State ─────────────────────────────────────────────────────────────
@@ -121,6 +121,22 @@ function updateHeader(d) {
     const ver = d && d.version ? 'v' + d.version : '';
     const lc  = d && d.lastCheck ? ' | Prüfung: ' + new Date(d.lastCheck).toLocaleString('de-DE') : '';
     document.getElementById('hdr-sub').textContent = ver + lc;
+}
+
+function tickClock() {
+    const el = document.getElementById('hdr-clock');
+    if (!el) return;
+    const n = new Date();
+    el.textContent = String(n.getHours()).padStart(2,'0') + ':' +
+                     String(n.getMinutes()).padStart(2,'0') + ':' +
+                     String(n.getSeconds()).padStart(2,'0');
+}
+
+function startClock() {
+    tickClock();
+    // align to next second boundary
+    const msToNext = 1000 - (Date.now() % 1000);
+    setTimeout(function() { tickClock(); setInterval(tickClock, 1000); }, msToNext);
 }
 
 // ── Tab Switching ─────────────────────────────────────────────────────────────
@@ -396,6 +412,7 @@ function openEventModal(id, defaultDate, defaultHour) {
         '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Wenn gesetzt, wird dieser Termin t\u00E4glich um diese Uhrzeit ausgef\u00FChrt (Wiederhol.-Einstellung oben beachten).</div>' +
         '<div class="form-row" style="margin-bottom:0;"><label>Ausl\u00F6ser-Uhrzeit (HH:MM)</label>' +
         '<input id="ev-triggertime" type="time" value="' + esc(ev ? ev.triggerTime : '') + '" style="max-width:160px;"></div>' +
+        '<div style="font-size:11px;color:var(--yellow);margin-top:8px;padding:6px 8px;background:#3d2f0022;border-radius:4px;border-left:2px solid var(--yellow);">\u26A0\uFE0F <strong>Ohne Uhrzeit</strong>: Alexa und Aktionen feuern nur beim t\u00E4glichen Check um 00:01 Uhr. F\u00FCr sofortige Ausf\u00FChrung: \u25B6-Button im Aufgaben-Tab nutzen.</div>' +
         '</div>' +
 
         // ── DATAPOINT ACTION ──────────────────────────────────────────────────
@@ -603,6 +620,16 @@ async function deleteEvent(id) {
     refreshCurrentTab();
 }
 
+async function triggerEventNow(id) {
+    const ev = events.find(e => e.id === id);
+    if (!ev) return;
+    if (!confirm('Jetzt sofort ausf\u00FChren: "' + ev.title + '"?\n\nDadurch werden Alexa-Ansage und Datenpunkt-Aktionen ausgel\u00F6st.')) return;
+    try {
+        const r = await api('POST', '/api/trigger-event', { id });
+        alert('\u2705 Ausgef\u00FChrt! Schau in die Logs f\u00FCr Details.');
+    } catch(e) { alert('Fehler: ' + e.message); }
+}
+
 async function toggleEventDone(id) {
     const ev = events.find(e => e.id === id);
     if (!ev) return;
@@ -666,7 +693,10 @@ function renderTasks() {
             (hasSetDP ? '<div style="font-size:11px;color:var(--muted);margin-top:3px;">\uD83D\uDD17 ' + esc(e.setDatapointId) + ' \u2192 ' + esc(e.setDatapointValue) + '</div>' : '') +
             (hasAlexaSegs ? '<div style="font-size:11px;color:var(--muted);margin-top:3px;">\uD83D\uDDE3 ' + e.messageSegments.map(s => s.type === 'text' ? esc(s.value.substring(0,20)) : ('[' + esc(s.stateId) + ']')).join('') + '</div>' : '') +
             '</div>' +
+            '<div style="display:flex;gap:6px;flex-shrink:0;">' +
+            '<button class="btn btn-ghost btn-sm" title="Jetzt ausf\u00FChren" data-eid="' + e.id + '" onclick="triggerEventNow(this.dataset.eid)">\u25B6</button>' +
             '<button class="btn btn-ghost btn-sm" data-eid="' + e.id + '" onclick="openEventModal(this.dataset.eid)">\u270F\uFE0F</button>' +
+            '</div>' +
             '</div>';
     }).join('');
 
@@ -1203,6 +1233,7 @@ function refreshCurrentTab() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
+    startClock();
     await loadData();
     renderCalendar();
     document.querySelectorAll('.tab').forEach((t,i) => { if (i === 0) t.classList.add('active'); });
