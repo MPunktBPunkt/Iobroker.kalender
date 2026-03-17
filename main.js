@@ -83,7 +83,7 @@ class KalenderAdapter extends utils.Adapter {
     async onReady() {
         try {
         try { this.pack = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')); }
-        catch(e) { this.pack = { version: '0.4.5' }; }
+        catch(e) { this.pack = { version: '0.4.7' }; }
 
         this.alexaDevices = [];
         try { const raw = this.config && this.config.alexaDevices; if (raw) this.alexaDevices = JSON.parse(raw); } catch(e) {}
@@ -620,6 +620,21 @@ class KalenderAdapter extends utils.Adapter {
             return;
         }
 
+        // ── Trigger single event immediately ──
+        if (url === '/api/trigger-event' && method === 'POST') {
+            try {
+                const body = JSON.parse(await this._readBody(req));
+                const ev   = this.events.find(e => e.id === body.id);
+                if (!ev) { json({ error: 'event not found' }, 404); return; }
+                this._log('info', 'TRIGGER', 'Manuell: ' + ev.title);
+                this._executeTimedEvent(ev).catch(e => this._log('warn', 'TRIGGER', e.message));
+                json({ ok: true, title: ev.title });
+            } catch(e) {
+                json({ error: e.message }, 400);
+            }
+            return;
+        }
+
         res.writeHead(404); res.end(JSON.stringify({ error: 'not found' }));
     }
 
@@ -666,14 +681,14 @@ class KalenderAdapter extends utils.Adapter {
             '.view-btns{display:flex;background:var(--bg3);border-radius:6px;padding:2px;}',
             '.view-btn{padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:500;color:var(--muted);}',
             '.view-btn.active{background:var(--blue-dim);color:#fff;}',
-            '.cal-grid-month{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border);border-radius:8px;overflow:hidden;}',
+            '.cal-grid-month{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:1px;background:var(--border);border-radius:8px;overflow:hidden;}',
             '.cal-day-header{background:var(--bg2);padding:8px;text-align:center;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;}',
-            '.cal-cell{background:var(--bg2);min-height:90px;padding:6px;cursor:pointer;transition:background .1s;}',
+            '.cal-cell{background:var(--bg2);min-height:90px;padding:6px;cursor:pointer;transition:background .1s;overflow:hidden;min-width:0;width:100%;}',
             '.cal-cell:hover{background:var(--bg3);} .cal-cell.today{background:#1a2d4a;}',
             '.cal-cell.other-month .cal-day-num{color:var(--dim);}',
             '.cal-day-num{font-size:12px;font-weight:600;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;}',
             '.cal-today-dot{width:22px;height:22px;background:var(--blue);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;}',
-            '.event-chip{border-radius:3px;padding:2px 5px;font-size:10px;margin-bottom:2px;cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}',
+            '.event-chip{border-radius:3px;padding:2px 5px;font-size:10px;margin-bottom:2px;cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block;width:100%;box-sizing:border-box;}',
             '.cal-week{display:grid;grid-template-columns:48px repeat(7,1fr);border-radius:8px;overflow:hidden;border:1px solid var(--border);}',
             '.week-col-header{background:var(--bg2);padding:8px 4px;text-align:center;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted);position:sticky;top:0;z-index:2;}',
             '.week-col-header.today-col{color:var(--blue);font-weight:700;}',
@@ -762,6 +777,7 @@ class KalenderAdapter extends utils.Adapter {
             '<div><div class="header-title">ioBroker Kalender</div>' +
             '<div class="header-sub" id="hdr-sub">Lade...</div></div></div>' +
             '<div class="header-stats">' +
+            '<div class="stat-item" style="font-size:16px;font-weight:700;color:var(--blue);font-family:var(--mono);letter-spacing:1px;"><span id="hdr-clock">&ndash;</span></div>' +
             '<div class="stat-item">Termine: <span id="hdr-ev">\u2013</span></div>' +
             '<div class="stat-item">Heute: <span id="hdr-today">\u2013</span></div>' +
             '<div class="stat-item">Geburtstage: <span id="hdr-bd">\u2013</span></div>' +
