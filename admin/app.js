@@ -1,4 +1,4 @@
-/* iobroker.kalender — Browser-App v0.5.1 */
+/* iobroker.kalender — Browser-App v0.5.4 */
 'use strict';
 
 // ── Global State ─────────────────────────────────────────────────────────────
@@ -48,6 +48,8 @@ function dateToStr(d) {
 }
 function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 
+const DOW_MAP = { mon:0,tue:1,wed:2,thu:3,fri:4,sat:5,sun:6 };
+
 function occursOnDate(ev, dateString) {
     if (!ev || !ev.date) return false;
     if (ev.date === dateString) return true;
@@ -56,8 +58,19 @@ function occursOnDate(ev, dateString) {
     const target = new Date(dateString + 'T12:00:00');
     if (target <= base) return false;
     if (ev.recurrenceEnd && target > new Date(ev.recurrenceEnd + 'T23:59:59')) return false;
-    if (ev.recurrence === 'daily')   return true;
-    if (ev.recurrence === 'weekly')  return Math.round((target - base) / 86400000) % 7 === 0;
+    if (ev.recurrence === 'daily') return true;
+    if (ev.recurrence === 'weekly') {
+        const days = ev.recurrenceDays && ev.recurrenceDays.length > 0 ? ev.recurrenceDays : null;
+        if (days) {
+            const dow = (target.getDay() + 6) % 7;
+            return days.some(d => DOW_MAP[d] === dow);
+        }
+        return Math.round((target - base) / 86400000) % 7 === 0;
+    }
+    if (ev.recurrence === 'workdays') {
+        const dow = (target.getDay() + 6) % 7;
+        return dow >= 0 && dow <= 4;
+    }
     if (ev.recurrence === 'monthly') return base.getDate() === target.getDate();
     if (ev.recurrence === 'yearly')  return base.getMonth() === target.getMonth() && base.getDate() === target.getDate();
     return false;
@@ -88,7 +101,7 @@ function birthdayDaysUntil(bd) {
 }
 
 function recLabel(r) {
-    return { none:'', daily:'Täglich', weekly:'Wöchentlich', monthly:'Monatlich', yearly:'Jährlich' }[r] || r;
+    return { none:'', daily:'T\u00E4glich', workdays:'Werktags', weekly:'W\u00F6chentlich', monthly:'Monatlich', yearly:'J\u00E4hrlich' }[r] || r;
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -110,6 +123,27 @@ async function loadData() {
         alexaDevs = d.alexaDevices || [];
         updateHeader(d);
     } catch(e) { console.error('loadData', e); }
+}
+
+
+function updateRecurrenceUI() {
+    var sel = document.getElementById('ev-recurrence');
+    var row = document.getElementById('ev-weekdays-row');
+    if (row) row.style.display = (sel && sel.value === 'weekly') ? 'block' : 'none';
+}
+
+function selectWeekdays(preset) {
+    var cbs = document.querySelectorAll('input[name=ev-wd]');
+    cbs.forEach(function(cb) {
+        if (preset === 'all')      cb.checked = true;
+        if (preset === 'none')     cb.checked = false;
+        if (preset === 'workdays') cb.checked = ['mon','tue','wed','thu','fri'].includes(cb.value);
+    });
+    // Update border colors
+    cbs.forEach(function(cb) {
+        var lbl = cb.parentElement;
+        if (lbl) lbl.style.borderColor = cb.checked ? 'var(--blue)' : 'var(--border)';
+    });
 }
 
 function updateHeader(d) {
@@ -409,22 +443,46 @@ function openEventModal(id, defaultDate, defaultHour) {
         '<div class="form-row"><label>Farbe</label><div class="color-swatches" id="ev-swatches">' + swatches + '</div>' +
         '<input id="ev-color" type="hidden" value="' + esc(ev ? (ev.color || '#58a6ff') : '#58a6ff') + '"></div>' +
         '<div class="form-cols">' +
-        '<div class="form-row"><label>Wiederholung</label><select id="ev-recurrence">' +
-        ['none','daily','weekly','monthly','yearly'].map(r => '<option value="' + r + '"' + (ev && ev.recurrence === r ? ' selected' : '') + '>' +
-            (r === 'none' ? 'Keine' : recLabel(r)) + '</option>').join('') +
+        '<div class="form-row"><label>Wiederholung</label><select id="ev-recurrence" onchange="updateRecurrenceUI()">' +
+        ['none','daily','workdays','weekly','monthly','yearly'].map(r => '<option value="' + r + '"' + (ev && ev.recurrence === r ? ' selected' : '') + '>' +
+            { none:'Keine', daily:'T\u00E4glich', workdays:'Werktags (Mo-Fr)', weekly:'W\u00F6chentlich', monthly:'Monatlich', yearly:'J\u00E4hrlich' }[r] + '</option>').join('') +
         '</select></div>' +
         '<div class="form-row"><label>Bis Datum</label><input id="ev-recend" type="date" value="' + esc(ev ? ev.recurrenceEnd : '') + '"></div></div>' +
 
-        // ── TRIGGER TIME ──────────────────────────────────────────────────────
+        // Wochentage (nur bei w\u00F6chentlich)
+        '<div id="ev-weekdays-row" style="display:' + (ev && ev.recurrence === 'weekly' ? 'block' : 'none') + ';margin-bottom:12px;">' +
+        '<div class="form-section" style="margin-bottom:6px;">Wochentage</div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+        [['mon','Mo'],['tue','Di'],['wed','Mi'],['thu','Do'],['fri','Fr'],['sat','Sa'],['sun','So']].map(([d,l]) => {
+            const sel = ev && ev.recurrenceDays && ev.recurrenceDays.includes(d);
+            return '<label style="display:flex;align-items:center;gap:3px;background:var(--bg3);border:1px solid ' + (sel ? 'var(--blue)' : 'var(--border)') + ';border-radius:6px;padding:5px 10px;cursor:pointer;font-size:13px;">' +
+                '<input type="checkbox" name="ev-wd" value="' + d + '"' + (sel ? ' checked' : '') + ' style="width:auto;margin:0;">' +
+                l + '</label>';
+        }).join('') +
+        '<button class="btn btn-ghost btn-sm" onclick="selectWeekdays(\'workdays\')" style="margin-left:8px;">Werktags</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="selectWeekdays(\'all\')">Alle</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="selectWeekdays(\'none\')">Keine</button>' +
+        '</div></div>' +
+
+        // Zeit + Erinnerung (ersetzt separaten Trigger-Block)
         '<hr class="form-divider">' +
         '<div class="trigger-box">' +
-        '<div class="trigger-box-title">\u23F0 Zeit-basierter Ausl\u00F6ser (optional)</div>' +
-        '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Wenn gesetzt, wird dieser Termin t\u00E4glich um diese Uhrzeit ausgef\u00FChrt (Wiederhol.-Einstellung oben beachten).</div>' +
-        '<div class="form-row" style="margin-bottom:0;"><label>Ausl\u00F6ser-Uhrzeit (HH:MM)</label>' +
-        '<input id="ev-triggertime" type="time" value="' + esc(ev ? ev.triggerTime : '') + '" style="max-width:160px;"></div>' +
-        '<div style="font-size:11px;color:var(--yellow);margin-top:8px;padding:6px 8px;background:#3d2f0022;border-radius:4px;border-left:2px solid var(--yellow);">\u26A0\uFE0F <strong>Ohne Uhrzeit</strong>: Alexa und Aktionen feuern nur beim t\u00E4glichen Check um 00:01 Uhr. F\u00FCr sofortige Ausf\u00FChrung: \u25B6-Button im Aufgaben-Tab nutzen.</div>' +
+        '<div class="trigger-box-title">\u23F0 Zeit & Erinnerung</div>' +
+        '<div class="form-cols">' +
+        '<div class="form-row"><label>Uhrzeit Termin (= Ausl\u00F6ser)</label>' +
+        '<input id="ev-time" type="time" value="' + esc(ev ? (ev.triggerTime || ev.time || '') : '') + '"></div>' +
+        '<div class="form-row"><label>Erinnerung vorher</label>' +
+        '<div style="display:flex;gap:6px;">' +
+        '<input id="ev-rem-val" type="number" min="1" max="999" placeholder="z.B. 30" style="width:80px;background:var(--bg2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;" value="' + esc(ev && ev.reminderBefore ? ev.reminderBefore.value : '') + '">' +
+        '<select id="ev-rem-unit" style="flex:1;background:var(--bg2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;">' +
+        ['minutes','hours','days'].map(u => '<option value="' + u + '"' + (ev && ev.reminderBefore && ev.reminderBefore.unit === u ? ' selected' : '') + '>' +
+            { minutes: 'Minuten', hours: 'Stunden', days: 'Tage' }[u] + '</option>').join('') +
+        '</select></div></div></div>' +
+        '<div style="font-size:11px;color:var(--muted);margin-top:6px;">Die Uhrzeit ist gleichzeitig der Ausl\u00F6ser f\u00FCr Alexa und Datenpunkt-Aktionen.</div>' +
         '</div>' +
 
+        // ── DATAPOINT ACTION ──────────────────────────────────────────────────
+        '<hr class="form-divider">' +
         // ── DATAPOINT ACTION ──────────────────────────────────────────────────
         '<hr class="form-divider">' +
         '<div class="form-section">\uD83D\uDD17 Datenpunkt-Aktionen</div>' +
@@ -584,8 +642,14 @@ async function saveEvent() {
         type:              document.getElementById('ev-type').value,
         color:             document.getElementById('ev-color').value || '#58a6ff',
         recurrence:        document.getElementById('ev-recurrence').value,
+        recurrenceDays:    Array.from(document.querySelectorAll('input[name=ev-wd]:checked')).map(cb => cb.value),
         recurrenceEnd:     document.getElementById('ev-recend').value,
-        triggerTime:       document.getElementById('ev-triggertime').value,
+        time:              (document.getElementById('ev-time') || {}).value || '',
+        triggerTime:       (document.getElementById('ev-time') || {}).value || '',
+        reminderBefore:    (document.getElementById('ev-rem-val') || {}).value
+                           ? { value: parseInt(document.getElementById('ev-rem-val').value),
+                               unit:  (document.getElementById('ev-rem-unit') || {}).value || 'minutes' }
+                           : null,
         dpActions:         JSON.parse(JSON.stringify(editingDpActions)),
         // keep legacy fields for backward compat (first action)
         setDatapointId:    editingDpActions.length > 0 ? editingDpActions[0].id : '',
@@ -693,7 +757,10 @@ function renderTasks() {
             '<div class="task-title">' + (hasTrigger ? '<span style="color:var(--yellow);">\u23F0 ' + e.triggerTime + '</span> ' : '') + esc(e.title) + '</div>' +
             '<div class="task-meta">' +
             (e.date ? '<span class="badge badge-blue">' + fmtDateShort(e.date) + '</span>' : '') +
-            (e.recurrence && e.recurrence !== 'none' ? '<span class="badge badge-purple">' + recLabel(e.recurrence) + '</span>' : '') +
+            (e.recurrence && e.recurrence !== 'none' ? '<span class="badge badge-purple">' + recLabel(e.recurrence) +
+            (e.recurrenceDays && e.recurrenceDays.length > 0 ? ' (' + e.recurrenceDays.map(function(d){return {mon:'Mo',tue:'Di',wed:'Mi',thu:'Do',fri:'Fr',sat:'Sa',sun:'So'}[d]||d;}).join(',') + ')' : '') +
+            '</span>' : '') +
+            (e.reminderBefore && e.reminderBefore.value ? '<span class="badge badge-yellow">\uD83D\uDD14 ' + e.reminderBefore.value + ' ' + {minutes:'min',hours:'h',days:'Tage'}[e.reminderBefore.unit||'minutes'] + ' vorher</span>' : '') +
             (hasSetDP ? '<span class="badge badge-orange">\uD83D\uDD17 ' + (e.dpActions ? e.dpActions.length + ' Aktion' + (e.dpActions.length>1?'en':'') : e.setDatapointId.split('.').slice(-1)[0]) + '</span>' : '') +
             (hasAlexaSegs ? '<span class="badge badge-blue">\uD83D\uDDE3 Segmente</span>' : '') +
             (e.alexaDatapoints && e.alexaDatapoints.length ? '<span class="badge badge-orange">\uD83D\uDDE3 Alexa (' + e.alexaDatapoints.length + ')</span>' : '') +
@@ -1087,6 +1154,54 @@ function startLogPoll() { stopLogPoll(); logPollTimer = setInterval(() => { if (
 function stopLogPoll()  { if (logPollTimer) { clearInterval(logPollTimer); logPollTimer = null; } }
 
 // ── SYSTEM TAB ────────────────────────────────────────────────────────────────
+
+async function loadTzInfo() {
+    const el = document.getElementById('tz-info');
+    if (el) el.innerHTML = '<span style="color:var(--muted);">\u23F3 Lade...</span>';
+    try {
+        const d = await api('GET', '/api/timezone-info');
+        if (!el) return;
+        const match = d.linuxTz === d.iobTz;
+        const syncColor = match ? 'var(--green)' : 'var(--yellow)';
+        const syncIcon  = match ? '\u2714 Synchron' : '\u26A0\uFE0F Nicht synchron';
+        el.innerHTML =
+            '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:13px;margin-bottom:12px;">' +
+            '<span style="color:var(--muted);">Linux-Zeitzone:</span><strong>' + esc(d.linuxTz || '?') + '</strong>' +
+            '<span style="color:var(--muted);">Linux-Uhrzeit:</span><strong style="font-family:var(--mono);">' + esc(d.linuxTime || '?') + '</strong>' +
+            '<span style="color:var(--muted);">NTP-Sync:</span><strong style="color:' + (d.ntpSync ? 'var(--green)' : 'var(--red)') + ';">' + (d.ntpSync ? '\u2714 Aktiv' : '\u2716 Inaktiv') + '</strong>' +
+            '<span style="color:var(--muted);">ioBroker-Zeitzone:</span><strong>' + esc(d.iobTz || '?') + '</strong>' +
+            '<span style="color:var(--muted);">Status:</span><strong style="color:' + syncColor + ';">' + syncIcon + '</strong>' +
+            '</div>' +
+            (!match ? '<div style="background:#3d2f00;border:1px solid var(--yellow);border-radius:6px;padding:10px;margin-bottom:10px;font-size:12px;color:var(--yellow);">' +
+                '\u26A0\uFE0F Linux-Zeitzone (<strong>' + esc(d.linuxTz) + '</strong>) und ioBroker-Zeitzone (<strong>' + esc(d.iobTz) + '</strong>) stimmen nicht \u00FCberein.<br>' +
+                'Der Kalender-Adapter nutzt die ioBroker-Zeitzone. Du kannst Linux auf ioBroker-Zeit synchronisieren:' +
+                '</div>' : '') +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+            (!match ? '<button class="btn btn-primary" onclick="syncTzToIob()">\uD83D\uDD04 Linux \u2192 ioBroker-Zeit (' + esc(d.iobTz) + ')</button>' : '') +
+            '<button class="btn btn-ghost" onclick="syncNtp()">\u23F1 NTP-Sync erzwingen</button>' +
+            '</div>';
+    } catch(e) {
+        if (el) el.innerHTML = '<span style="color:var(--red);">Fehler: ' + esc(e.message) + '</span>';
+    }
+}
+
+async function syncTzToIob() {
+    if (!confirm('Linux-Zeitzone auf ioBroker-Zeitzone setzen?\nDies f\u00FChrt: sudo timedatectl set-timezone <tz>')) return;
+    try {
+        const r = await api('POST', '/api/timezone-sync');
+        alert(r.ok ? '\u2714 Zeitzone gesetzt: ' + r.tz + '\n' + r.output : 'Fehler: ' + r.error);
+        loadTzInfo();
+    } catch(e) { alert('Fehler: ' + e.message); }
+}
+
+async function syncNtp() {
+    try {
+        const r = await api('POST', '/api/ntp-sync');
+        alert(r.ok ? '\u2714 NTP-Sync aktiviert.\n' + r.output : 'Fehler: ' + r.error);
+        loadTzInfo();
+    } catch(e) { alert('Fehler: ' + e.message); }
+}
+
 function renderSystem() {
     const panel  = document.getElementById('panel-system');
     const today  = todayStr();
@@ -1100,6 +1215,13 @@ function renderSystem() {
         '<div class="sys-card"><div class="sys-val" style="color:var(--yellow);">' + timed + '</div><div class="sys-label">\u23F0 Geplant</div></div>' +
         '<div class="sys-card"><div class="sys-val" style="color:var(--green);">' + evTd + '</div><div class="sys-label">Heute</div></div>' +
         '<div class="sys-card"><div class="sys-val" style="color:var(--orange);">' + birthdays.length + '</div><div class="sys-label">Geburtstage</div></div>' +
+        '</div>' +
+
+        // Zeitzone
+        '<div class="card" id="tz-card">' +
+        '<div class="card-header"><div class="card-title">\uD83D\uDD52 Zeitzone</div>' +
+        '<button class="btn btn-ghost btn-sm" onclick="loadTzInfo()">\uD83D\uDD04 Aktualisieren</button></div>' +
+        '<div id="tz-info" style="font-size:13px;">Lade...</div>' +
         '</div>' +
 
         // ICS
@@ -1132,6 +1254,7 @@ function renderSystem() {
         '<div id="ver-info">Lade...</div></div>';
 
     loadVersion();
+    loadTzInfo();
 }
 
 async function discoverAlexaDevs() {
