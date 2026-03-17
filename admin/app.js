@@ -1,4 +1,4 @@
-/* iobroker.kalender — Browser-App v0.4.7 */
+/* iobroker.kalender — Browser-App v0.4.8 */
 'use strict';
 
 // ── Global State ─────────────────────────────────────────────────────────────
@@ -16,7 +16,8 @@ let editEventId    = null;
 let editBdayId     = null;
 let logPollTimer   = null;
 let activeTab      = 'cal';
-let editingSegments = [];
+let editingSegments  = [];
+let editingDpActions = [];  // [{id, type, value, name, unit}]
 
 const COLORS       = ['#58a6ff','#3fb950','#f0883e','#f85149','#a371f7','#e3b341','#ff7b72','#39d353'];
 const WEEKDAYS_S   = ['Mo','Di','Mi','Do','Fr','Sa','So'];
@@ -359,8 +360,17 @@ function calNext() {
 //   EVENT MODAL — Full featured
 // ─────────────────────────────────────────────────────────────────────────────
 function openEventModal(id, defaultDate, defaultHour) {
-    editEventId  = id;
-    editingSegments = [];
+    editEventId      = id;
+    editingSegments  = [];
+    // Build dpActions from old single-action or new multi-actions
+    if (ev && ev.dpActions && ev.dpActions.length > 0) {
+        editingDpActions = JSON.parse(JSON.stringify(ev.dpActions));
+    } else if (ev && ev.setDatapointId) {
+        // migrate old format
+        editingDpActions = [{ id: ev.setDatapointId, type: ev.setDatapointType || 'boolean', value: String(ev.setDatapointValue || ''), name: '', unit: '' }];
+    } else {
+        editingDpActions = [];
+    }
     const ev     = id ? events.find(e => e.id === id) : null;
     const modal  = document.getElementById('event-modal-inner');
     const ds     = ev ? ev.date : (defaultDate || todayStr());
@@ -417,21 +427,10 @@ function openEventModal(id, defaultDate, defaultHour) {
 
         // ── DATAPOINT ACTION ──────────────────────────────────────────────────
         '<hr class="form-divider">' +
-        '<div class="form-section">\uD83D\uDD17 ioBroker Datenpunkt-Aktion</div>' +
-        '<div class="form-cols">' +
-        '<div class="form-row"><label>Datenpunkt setzen (State-ID)</label>' +
-        '<input id="ev-dp-id" type="text" placeholder="z.B. pool.0.pump.switch" value="' + esc(ev ? ev.setDatapointId : '') + '"></div>' +
-        '<div class="form-row"><label>Wert</label>' +
-        '<input id="ev-dp-val" type="text" placeholder="true / false / 1 / 23.5" value="' + esc(ev ? ev.setDatapointValue : '') + '"></div></div>' +
-        '<div class="form-row"><label>Typ</label><select id="ev-dp-type">' +
-        ['boolean','number','string'].map(t => '<option value="' + t + '"' + (ev && ev.setDatapointType === t ? ' selected' : '') + '>' +
-            { boolean: 'Boolean (true/false)', number: 'Zahl', string: 'Text' }[t] + '</option>').join('') +
-        '</select></div>' +
-        '<div class="form-cols">' +
-        '<div class="form-row"><label>Zähler erhöhen (State-ID)</label>' +
-        '<input id="ev-ctr-id" type="text" placeholder="z.B. javascript.0.count" value="' + esc(ev ? ev.iobCounterId : '') + '"></div>' +
-        '<div class="form-row"><label>Einfacher Datenpunkt (State-ID)</label>' +
-        '<input id="ev-iob-id" type="text" placeholder="z.B. javascript.0.flag" value="' + esc(ev ? ev.iobDatapointId : '') + '"></div></div>' +
+        '<div class="form-section">\uD83D\uDD17 Datenpunkt-Aktionen</div>' +
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Beliebig viele Datenpunkte setzen. Auf State-ID klicken l\u00E4dt Typ und aktuellen Wert automatisch.</div>' +
+        '<div id="dp-actions-list">' + buildDpActionsHtml(editingDpActions) + '</div>' +
+        '<button class="btn btn-ghost btn-sm" onclick="addDpAction()" style="margin-top:6px;">+ Datenpunkt</button>' +
 
         // ── ALEXA MESSAGE BUILDER ─────────────────────────────────────────────
         '<hr class="form-divider">' +
@@ -587,11 +586,13 @@ async function saveEvent() {
         recurrence:        document.getElementById('ev-recurrence').value,
         recurrenceEnd:     document.getElementById('ev-recend').value,
         triggerTime:       document.getElementById('ev-triggertime').value,
-        setDatapointId:    document.getElementById('ev-dp-id').value.trim(),
-        setDatapointValue: document.getElementById('ev-dp-val').value.trim(),
-        setDatapointType:  document.getElementById('ev-dp-type').value,
-        iobCounterId:      document.getElementById('ev-ctr-id').value.trim(),
-        iobDatapointId:    document.getElementById('ev-iob-id').value.trim(),
+        dpActions:         JSON.parse(JSON.stringify(editingDpActions)),
+        // keep legacy fields for backward compat (first action)
+        setDatapointId:    editingDpActions.length > 0 ? editingDpActions[0].id : '',
+        setDatapointValue: editingDpActions.length > 0 ? editingDpActions[0].value : '',
+        setDatapointType:  editingDpActions.length > 0 ? editingDpActions[0].type : 'boolean',
+        iobCounterId:      '',
+        iobDatapointId:    '',
         iobDatapointValue: true,
         alexaMessage:      msgBuilderVisible ? '' : (document.getElementById('ev-alexa-msg') ? document.getElementById('ev-alexa-msg').value.trim() : ''),
         messageSegments:   msgBuilderVisible ? JSON.parse(JSON.stringify(editingSegments)) : [],
@@ -646,11 +647,18 @@ function renderTasks() {
     const weekEnd = dateToStr(addDays(new Date(), 7));
 
     let filtered = [...events];
-    if (taskFilter === 'today')   filtered = filtered.filter(e => occursOnDate(e, today));
-    if (taskFilter === 'week')    filtered = filtered.filter(e => e.date >= today && e.date <= weekEnd);
+    // Helper: is an event "active" (upcoming or repeating, not past one-off)
+    function isActive(e) {
+        if (e.done) return false;
+        if (e.recurrence && e.recurrence !== 'none') return true;  // repeating always visible
+        if (e.triggerTime) return true;   // timed tasks always visible
+        return !e.date || e.date >= today; // only show future/today for one-off
+    }
+    if (taskFilter === 'today')   filtered = filtered.filter(e => !e.done && occursOnDate(e, today));
+    if (taskFilter === 'week')    filtered = filtered.filter(e => !e.done && e.date >= today && e.date <= weekEnd);
     if (taskFilter === 'done')    filtered = filtered.filter(e => e.done);
-    if (taskFilter === 'timed')   filtered = filtered.filter(e => e.triggerTime);
-    if (taskFilter === 'all')     filtered = filtered.filter(() => true);
+    if (taskFilter === 'timed')   filtered = filtered.filter(e => !e.done && e.triggerTime);
+    if (taskFilter === 'all')     filtered = filtered.filter(e => isActive(e));
 
     filtered.sort((a,b) => {
         if (a.done !== b.done) return a.done ? 1 : -1;
@@ -678,7 +686,7 @@ function renderTasks() {
         const col = e.color || '#58a6ff';
         const hasTrigger = !!e.triggerTime;
         const hasAlexaSegs = e.messageSegments && e.messageSegments.length > 0;
-        const hasSetDP = !!e.setDatapointId;
+        const hasSetDP = (e.dpActions && e.dpActions.length > 0) || !!e.setDatapointId;
         return '<div class="task-card' + (e.done ? ' done' : '') + '" style="border-left:3px solid ' + (e.done ? 'var(--dim)' : col) + ';">' +
             '<div class="task-check' + (e.done ? ' checked' : '') + '" data-eid="' + e.id + '" onclick="toggleEventDone(this.dataset.eid)">' + (e.done ? '\u2713' : '') + '</div>' +
             '<div class="task-body">' +
@@ -686,12 +694,13 @@ function renderTasks() {
             '<div class="task-meta">' +
             (e.date ? '<span class="badge badge-blue">' + fmtDateShort(e.date) + '</span>' : '') +
             (e.recurrence && e.recurrence !== 'none' ? '<span class="badge badge-purple">' + recLabel(e.recurrence) + '</span>' : '') +
-            (hasSetDP ? '<span class="badge badge-orange">\uD83D\uDD17 ' + e.setDatapointId.split('.').slice(-1)[0] + '</span>' : '') +
+            (hasSetDP ? '<span class="badge badge-orange">\uD83D\uDD17 ' + (e.dpActions ? e.dpActions.length + ' Aktion' + (e.dpActions.length>1?'en':'') : e.setDatapointId.split('.').slice(-1)[0]) + '</span>' : '') +
             (hasAlexaSegs ? '<span class="badge badge-blue">\uD83D\uDDE3 Segmente</span>' : '') +
-            (e.alexaDatapoints && e.alexaDatapoints.length ? '<span class="badge badge-orange">\uD83D\uDDE3 Alexa</span>' : '') +
+            (e.alexaDatapoints && e.alexaDatapoints.length ? '<span class="badge badge-orange">\uD83D\uDDE3 Alexa (' + e.alexaDatapoints.length + ')</span>' : '') +
             '</div>' +
-            (hasSetDP ? '<div style="font-size:11px;color:var(--muted);margin-top:3px;">\uD83D\uDD17 ' + esc(e.setDatapointId) + ' \u2192 ' + esc(e.setDatapointValue) + '</div>' : '') +
-            (hasAlexaSegs ? '<div style="font-size:11px;color:var(--muted);margin-top:3px;">\uD83D\uDDE3 ' + e.messageSegments.map(s => s.type === 'text' ? esc(s.value.substring(0,20)) : ('[' + esc(s.stateId) + ']')).join('') + '</div>' : '') +
+            (hasSetDP && e.dpActions ? e.dpActions.map(function(a){return '<div style="font-size:11px;color:var(--muted);margin-top:2px;">\uD83D\uDD17 ' + esc(a.id) + ' \u2192 <strong>' + esc(String(a.value)) + '</strong></div>';}).join('') : '') +
+            (!hasSetDP && e.setDatapointId ? '<div style="font-size:11px;color:var(--muted);margin-top:2px;">\uD83D\uDD17 ' + esc(e.setDatapointId) + ' \u2192 ' + esc(String(e.setDatapointValue)) + '</div>' : '') +
+            (hasAlexaSegs ? '<div style="font-size:11px;color:var(--muted);margin-top:2px;">\uD83D\uDDE3 ' + e.messageSegments.map(s => s.type === 'text' ? esc(s.value.substring(0,20)) : ('[' + esc(s.stateId) + ']')).join('') + '</div>' : '') +
             '</div>' +
             '<div style="display:flex;gap:6px;flex-shrink:0;">' +
             '<button class="btn btn-ghost btn-sm" title="Jetzt ausf\u00FChren" data-eid="' + e.id + '" onclick="triggerEventNow(this.dataset.eid)">\u25B6</button>' +
@@ -802,6 +811,95 @@ async function deleteBday(id) {
     birthdays = birthdays.filter(b => b.id !== id);
     closeModal('bday-modal');
     renderBirthdays();
+}
+
+
+// ── Datapoint Action Builder ──────────────────────────────────────────────────
+function buildDpActionsHtml(actions) {
+    if (!actions || actions.length === 0) {
+        return '<div style="color:var(--muted);font-size:12px;padding:6px 0;">Noch keine Aktion. Klicke auf + Datenpunkt.</div>';
+    }
+    return actions.map(function(a, i) {
+        var typeOpts = ['boolean','number','string'].map(function(t) {
+            return '<option value="' + t + '"' + (a.type === t ? ' selected' : '') + '>' +
+                { boolean: 'Boolean', number: 'Zahl', string: 'Text' }[t] + '</option>';
+        }).join('');
+        var valInput = '';
+        if (a.type === 'boolean') {
+            valInput = '<select class="seg-input" data-idx="' + i + '" onchange="updateDpAction(' + i + ','value',this.value)">' +
+                '<option value="true"' + (String(a.value) === 'true' ? ' selected' : '') + '>true</option>' +
+                '<option value="false"' + (String(a.value) === 'false' ? ' selected' : '') + '>false</option>' +
+                '</select>';
+        } else if (a.type === 'number') {
+            valInput = '<input class="seg-input" type="number" step="any" placeholder="Zahl" value="' + esc(String(a.value)) + '" ' +
+                'data-idx="' + i + '" oninput="updateDpAction(' + i + ','value',this.value)">';
+        } else {
+            valInput = '<input class="seg-input" type="text" placeholder="Text" value="' + esc(String(a.value)) + '" ' +
+                'data-idx="' + i + '" oninput="updateDpAction(' + i + ','value',this.value)">';
+        }
+        return '<div class="seg-row" style="align-items:flex-start;">' +
+            '<div class="seg-inner" style="gap:6px;">' +
+            '<div style="display:flex;gap:6px;align-items:center;">' +
+            '<input class="seg-input" type="text" placeholder="State-ID  z.B. pool.0.pump" value="' + esc(a.id) + '" style="flex:1;" ' +
+            'data-idx="' + i + '" oninput="updateDpAction(' + i + ','id',this.value)" ' +
+            'onblur="loadDpInfo(' + i + ',this.value)">' +
+            '<button class="btn btn-ghost btn-sm" style="flex-shrink:0;" data-idx="' + i + '" onclick="loadDpInfo(parseInt(this.dataset.idx), document.querySelector('#dp-actions-list .seg-row:nth-child(' + (i+1) + ') input[type=text]').value)">\uD83D\uDD04</button>' +
+            '</div>' +
+            (a.name ? '<div style="font-size:10px;color:var(--green);">' + esc(a.name) + (a.unit ? ' [' + esc(a.unit) + ']' : '') + '</div>' : '') +
+            '<div style="display:flex;gap:6px;align-items:center;">' +
+            '<select class="seg-type-sel" data-idx="' + i + '" onchange="changeDpType(' + i + ',this.value)">' + typeOpts + '</select>' +
+            valInput +
+            '</div></div>' +
+            '<button style="background:var(--bg3);border:1px solid var(--border);color:var(--red);border-radius:4px;padding:4px 8px;cursor:pointer;font-size:12px;flex-shrink:0;margin-top:2px;" ' +
+            'data-idx="' + i + '" onclick="removeDpAction(parseInt(this.dataset.idx))">&times;</button>' +
+            '</div>';
+    }).join('');
+}
+
+function addDpAction() {
+    editingDpActions.push({ id: '', type: 'boolean', value: 'true', name: '', unit: '' });
+    document.getElementById('dp-actions-list').innerHTML = buildDpActionsHtml(editingDpActions);
+}
+
+function removeDpAction(idx) {
+    editingDpActions.splice(idx, 1);
+    document.getElementById('dp-actions-list').innerHTML = buildDpActionsHtml(editingDpActions);
+}
+
+function updateDpAction(idx, field, value) {
+    if (editingDpActions[idx]) editingDpActions[idx][field] = value;
+}
+
+function changeDpType(idx, newType) {
+    if (!editingDpActions[idx]) return;
+    editingDpActions[idx].type = newType;
+    // Reset value to sensible default
+    if (newType === 'boolean') editingDpActions[idx].value = 'true';
+    else if (newType === 'number') editingDpActions[idx].value = '0';
+    else editingDpActions[idx].value = '';
+    document.getElementById('dp-actions-list').innerHTML = buildDpActionsHtml(editingDpActions);
+}
+
+async function loadDpInfo(idx, stateId) {
+    if (!stateId || stateId.length < 3) return;
+    try {
+        const d = await api('GET', '/api/object-info?id=' + encodeURIComponent(stateId));
+        if (!d.found) return;
+        editingDpActions[idx].name = d.name || '';
+        editingDpActions[idx].unit = d.unit || '';
+        // Auto-set type from ioBroker object definition
+        const t = d.type;
+        if (t === 'boolean' || t === 'number' || t === 'string') {
+            editingDpActions[idx].type = t;
+            // Set sensible default value if empty
+            if (!editingDpActions[idx].value || editingDpActions[idx].value === 'true' || editingDpActions[idx].value === 'false') {
+                if (t === 'boolean') editingDpActions[idx].value = 'true';
+                else if (t === 'number') editingDpActions[idx].value = d.currentVal != null ? String(d.currentVal) : '0';
+                else editingDpActions[idx].value = d.currentVal != null ? String(d.currentVal) : '';
+            }
+        }
+        document.getElementById('dp-actions-list').innerHTML = buildDpActionsHtml(editingDpActions);
+    } catch(e) { /* silent */ }
 }
 
 // ── Alexa Picker ─────────────────────────────────────────────────────────────
