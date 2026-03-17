@@ -1,4 +1,4 @@
-/* iobroker.kalender — Browser-App v0.4.0 */
+/* iobroker.kalender — Browser-App v0.4.5 */
 'use strict';
 
 // ── Global State ─────────────────────────────────────────────────────────────
@@ -8,6 +8,7 @@ let birthdays      = [];
 let icsEvents      = [];
 let icsUrls        = [];
 let alexaDevs      = [];
+let discoveredAlexaDevs = [];  // cache from /api/alexa-discover
 let currentView    = 'month';
 let currentDate    = new Date();
 let taskFilter     = 'all';
@@ -181,53 +182,88 @@ function renderMonthGrid() {
     const totalCells = Math.ceil((startDow + lastDay.getDate()) / 7) * 7;
 
     let html = '<div class="cal-grid-month">';
-    html += WEEKDAYS_S.map(d => '<div class="cal-day-header">' + d + '</div>').join('');
+    // Day headers with better styling
+    const dayColors = ['color:var(--text)','color:var(--text)','color:var(--text)','color:var(--text)','color:var(--text)','color:var(--orange)','color:var(--red)'];
+    html += WEEKDAYS_S.map((d,i) => '<div class="cal-day-header" style="' + dayColors[i] + '">' + d + '</div>').join('');
 
     for (let i = 0; i < totalCells; i++) {
         const cell = addDays(startDate, i), ds = dateToStr(cell);
         const isToday = ds === today, isOther = cell.getMonth() !== month;
+        const isWeekend = cell.getDay() === 0 || cell.getDay() === 6;
         const dayEvs  = getEventsForDate(ds), dayBds = getBirthdaysForDate(ds);
+        const totalItems = dayBds.length + dayEvs.length;
 
         const dayNum = isToday
             ? '<span class="cal-today-dot">' + cell.getDate() + '</span>'
-            : String(cell.getDate());
+            : '<span style="' + (isWeekend && !isOther ? 'color:var(--orange);' : '') + '">' + cell.getDate() + '</span>';
 
+        // Dot summary for days with many events
         let chips = '';
-        dayBds.forEach(b => {
-            chips += '<div class="event-chip" style="background:#3d220033;color:#f0883e;border-left:2px solid #f0883e;" ' +
-                'data-bid="' + esc(b.id) + '" onclick="event.stopPropagation();openBdayModal(this.dataset.bid)">' +
-                '\uD83C\uDF82 ' + esc(b.name) + '</div>';
-        });
-        dayEvs.slice(0,4).forEach(e => {
-            const col = e.color || '#58a6ff';
-            const isIcs = e.source === 'ics';
-            chips += '<div class="event-chip" style="background:' + col + '22;color:' + col + ';border-left:2px solid ' + col + ';" ' +
-                (isIcs ? '' : 'data-eid="' + esc(e.id) + '" onclick="event.stopPropagation();openEventModal(this.dataset.eid)"') + '>' +
-                (isIcs ? '\uD83D\uDCC6 ' : (e.triggerTime ? '\u23F0 ' : '')) +
-                (e.time ? e.time + ' ' : '') + esc(e.title) + '</div>';
-        });
-        if (dayEvs.length > 4) chips += '<div class="event-chip" style="background:var(--bg3);color:var(--muted);">+' + (dayEvs.length-4) + ' weitere</div>';
+        const maxChips = 3;
+        const allItems = [...dayBds.map(b => ({type:'bday',obj:b})), ...dayEvs.map(e => ({type:'ev',obj:e}))];
 
-        html += '<div class="cal-cell' + (isOther?' other-month':'') + (isToday?' today':'') + '" ' +
+        allItems.slice(0, maxChips).forEach(item => {
+            if (item.type === 'bday') {
+                const b = item.obj;
+                chips += '<div class="event-chip" style="background:#3d220033;color:#f0883e;border-left:2px solid #f0883e;font-weight:500;" ' +
+                    'data-bid="' + esc(b.id) + '" onclick="event.stopPropagation();openBdayModal(this.dataset.bid)">' +
+                    '\uD83C\uDF82 ' + esc(b.name) + '</div>';
+            } else {
+                const e = item.obj, col = e.color || '#58a6ff', isIcs = e.source === 'ics';
+                const timeStr = e.triggerTime ? ('\u23F0' + e.triggerTime + ' ') : (e.time ? e.time + ' ' : '');
+                chips += '<div class="event-chip" style="background:' + col + '28;color:' + col + ';border-left:2px solid ' + col + ';font-weight:500;" ' +
+                    (isIcs ? '' : 'data-eid="' + esc(e.id) + '" onclick="event.stopPropagation();openEventModal(this.dataset.eid)"') + '>' +
+                    (isIcs ? '\uD83D\uDCC6 ' : '') + timeStr + esc(e.title) + '</div>';
+            }
+        });
+        if (totalItems > maxChips) {
+            chips += '<div class="event-chip" style="background:var(--bg3);color:var(--muted);text-align:center;">+' + (totalItems - maxChips) + ' weitere</div>';
+        }
+
+        // Colored dot strip for quick visual overview
+        const dotStrip = allItems.length > 0 ? '<div style="display:flex;gap:2px;flex-wrap:wrap;margin-bottom:3px;">' +
+            allItems.slice(0,7).map(item => {
+                const col = item.type === 'bday' ? '#f0883e' : (item.obj.color || '#58a6ff');
+                return '<span style="width:6px;height:6px;border-radius:50%;background:' + col + ';flex-shrink:0;"></span>';
+            }).join('') + '</div>' : '';
+
+        const cellBg = isToday ? 'background:linear-gradient(135deg,#1a2d4a 0%,#1c3a5a 100%);border:1px solid #2d5a8a;' :
+                       isOther ? '' : 'border:1px solid var(--border);';
+
+        html += '<div class="cal-cell' + (isOther?' other-month':'') + (isToday?' today':'') + '" style="' + cellBg + '" ' +
             'data-date="' + ds + '" onclick="calCellClick(this.dataset.date)">' +
-            '<div class="cal-day-num">' + dayNum + '</div>' + chips + '</div>';
+            '<div class="cal-day-num">' + dayNum +
+            (totalItems > 0 && !isToday ? '<span style="font-size:9px;color:var(--dim);font-weight:400;">' + totalItems + '</span>' : '') +
+            '</div>' +
+            dotStrip + chips + '</div>';
     }
     return html + '</div>';
 }
 
 function renderWeekGrid() {
-    const mon = getMonday(currentDate), today = todayStr();
+    const mon = getMonday(currentDate), today = todayStr(), now = new Date();
+    const curDs = dateToStr(now), curH = now.getHours(), curMin = now.getMinutes();
+
     let html = '<div class="cal-week" style="height:calc(100vh - 190px);overflow-y:auto;">';
-    html += '<div class="week-col-header" style="background:var(--bg1);"></div>';
+    html += '<div class="week-col-header" style="background:var(--bg1);border-right:1px solid var(--border2);"></div>';
     for (let d = 0; d < 7; d++) {
         const day = addDays(mon, d), ds = dateToStr(day);
-        html += '<div class="week-col-header' + (ds===today?' today-col':'') + '">' +
-            WEEKDAYS_S[d] + '<br><strong>' + day.getDate() + '</strong></div>';
+        const isToday = ds === today;
+        const isWE = day.getDay() === 0 || day.getDay() === 6;
+        const bds = getBirthdaysForDate(ds);
+        html += '<div class="week-col-header' + (isToday?' today-col':'') + '" style="' + (isWE && !isToday ? 'color:var(--orange);' : '') + '">' +
+            WEEKDAYS_S[d] + '<br>' +
+            (isToday ? '<span class="cal-today-dot" style="display:inline-flex;width:24px;height:24px;font-size:12px;">' + day.getDate() + '</span>' : '<strong>' + day.getDate() + '</strong>') +
+            (bds.length ? '<br><span style="font-size:9px;">\uD83C\uDF82</span>' : '') +
+            '</div>';
     }
     for (let h = 0; h < 24; h++) {
-        html += '<div class="week-time-label">' + String(h).padStart(2,'0') + ':00</div>';
+        const isCurrentHour = today === curDs && h === curH;
+        html += '<div class="week-time-label" style="' + (isCurrentHour ? 'color:var(--blue);font-weight:700;' : '') + '">' +
+            String(h).padStart(2,'0') + ':00</div>';
         for (let d = 0; d < 7; d++) {
             const day = addDays(mon, d), ds = dateToStr(day);
+            const isNow = ds === curDs && h === curH;
             const slotEvs = getEventsForDate(ds).filter(e => {
                 if (e.allDay) return h === 0;
                 const t = e.triggerTime || e.time;
@@ -236,19 +272,23 @@ function renderWeekGrid() {
             });
             const chips = slotEvs.map(e => {
                 const col = e.color || '#58a6ff';
-                return '<div class="week-event" style="background:' + col + '33;color:' + col + ';border-left:2px solid ' + col + ';" ' +
+                return '<div class="week-event" style="background:' + col + '33;color:' + col + ';border-left:2px solid ' + col + ';border-radius:3px;" ' +
                     (e.source !== 'ics' ? 'data-eid="' + esc(e.id) + '" onclick="event.stopPropagation();openEventModal(this.dataset.eid)"' : '') + '>' +
-                    (e.triggerTime ? '\u23F0 ' : '') + esc(e.title) + '</div>';
+                    (e.triggerTime ? '\u23F0 ' + e.triggerTime + ' ' : '') + esc(e.title) + '</div>';
             }).join('');
-            html += '<div class="week-slot" data-date="' + ds + '" data-hour="' + h + '" onclick="calSlotClick(this.dataset.date,this.dataset.hour)">' + chips + '</div>';
+            html += '<div class="week-slot" style="' + (isNow ? 'background:#1a2d4a33;' : '') + '" ' +
+                'data-date="' + ds + '" data-hour="' + h + '" onclick="calSlotClick(this.dataset.date,this.dataset.hour)">' + chips + '</div>';
         }
     }
     return html + '</div>';
 }
 
 function renderDayGrid() {
-    const ds = dateToStr(currentDate), today = todayStr(), curHour = new Date().getHours();
-    let html = '<div style="height:calc(100vh - 190px);overflow-y:auto;border:1px solid var(--border);border-radius:8px;">';
+    const ds = dateToStr(currentDate), today = todayStr(), now = new Date();
+    const curHour = now.getHours(), curMin = now.getMinutes();
+    const isToday = ds === today;
+    let html = '<div style="height:calc(100vh - 190px);overflow-y:auto;border:1px solid var(--border);border-radius:8px;overflow:hidden;">';
+
     for (let h = 0; h < 24; h++) {
         const slotEvs = getEventsForDate(ds).filter(e => {
             if (e.allDay) return h === 0;
@@ -257,23 +297,27 @@ function renderDayGrid() {
             return parseInt(t.split(':')[0]) === h;
         });
         const bdChips = h === 0 ? getBirthdaysForDate(ds).map(b =>
-            '<div style="background:#3d220055;color:#f0883e;border-left:3px solid #f0883e;border-radius:3px;padding:6px 8px;margin-bottom:4px;cursor:pointer;" ' +
-            'data-bid="' + esc(b.id) + '" onclick="openBdayModal(this.dataset.bid)">\uD83C\uDF82 ' + esc(b.name) + ' hat Geburtstag!</div>'
+            '<div style="background:#3d220055;color:#f0883e;border-left:3px solid #f0883e;border-radius:4px;padding:8px 10px;margin-bottom:5px;cursor:pointer;font-weight:500;" ' +
+            'data-bid="' + esc(b.id) + '" onclick="openBdayModal(this.dataset.bid)">\uD83C\uDF82 ' + esc(b.name) + ' hat heute Geburtstag!</div>'
         ).join('') : '';
         const chips = slotEvs.map(e => {
             const col = e.color || '#58a6ff';
-            return '<div style="background:' + col + '33;color:' + col + ';border-left:3px solid ' + col + ';border-radius:3px;padding:6px 8px;margin-bottom:4px;' +
+            return '<div style="background:' + col + '22;color:' + col + ';border-left:3px solid ' + col + ';border-radius:4px;padding:8px 10px;margin-bottom:5px;' +
                 (e.source !== 'ics' ? 'cursor:pointer;"' : '"') +
                 (e.source !== 'ics' ? ' data-eid="' + esc(e.id) + '" onclick="event.stopPropagation();openEventModal(this.dataset.eid)"' : '') + '>' +
-                (e.triggerTime ? '<strong>\u23F0 ' + e.triggerTime + '</strong> ' : (e.time ? '<strong>' + e.time + '</strong> ' : '')) +
-                esc(e.title) + (e.description ? '<br><small style="opacity:.7;">' + esc(e.description.substring(0,80)) + '</small>' : '') + '</div>';
+                (e.triggerTime ? '<strong style="font-size:13px;">\u23F0 ' + e.triggerTime + '</strong> ' : (e.time ? '<strong>' + e.time + '</strong> ' : '')) +
+                '<span style="font-weight:600;">' + esc(e.title) + '</span>' +
+                (e.description ? '<div style="font-size:11px;opacity:.65;margin-top:2px;">' + esc(e.description.substring(0,100)) + '</div>' : '') + '</div>';
         }).join('');
-        const isNow = ds === today && h === curHour;
-        html += '<div style="display:grid;grid-template-columns:48px 1fr;">' +
-            '<div style="font-size:10px;color:var(--dim);font-family:var(--mono);padding:6px 4px;border-bottom:1px solid var(--border);background:' + (isNow?'#1a2d4a':'var(--bg1)') + ';">' + String(h).padStart(2,'0') + ':00</div>' +
-            '<div style="padding:4px 8px;border-bottom:1px solid var(--border);background:' + (isNow?'#1a2d4a11':'var(--bg2)') + ';cursor:pointer;" ' +
+        const isNow = isToday && h === curHour;
+        const timeStr = String(h).padStart(2,'0') + ':00';
+        html += '<div style="display:grid;grid-template-columns:52px 1fr;' + (isNow ? 'background:#0d2040;' : '') + '">' +
+            '<div style="font-size:11px;color:' + (isNow?'var(--blue)':'var(--dim)') + ';font-family:var(--mono);padding:8px 6px;border-bottom:1px solid var(--border);background:' + (isNow?'#1a2d4a':'var(--bg1)') + ';font-weight:' + (isNow?'700':'400') + ';position:sticky;left:0;">' + timeStr + '</div>' +
+            '<div style="padding:6px 10px;border-bottom:1px solid var(--border);background:' + (isNow?'rgba(30,60,100,.2)':'var(--bg2)') + ';min-height:44px;cursor:pointer;" ' +
             'data-date="' + ds + '" data-hour="' + h + '" onclick="calSlotClick(this.dataset.date,this.dataset.hour)">' +
-            bdChips + chips + '</div></div>';
+            bdChips + chips +
+            (isNow ? '<div style="position:absolute;left:52px;right:0;height:2px;background:var(--blue);opacity:.6;top:' + Math.round(curMin/60*44) + 'px;pointer-events:none;"></div>' : '') +
+            '</div></div>';
     }
     return html + '</div>';
 }
@@ -315,7 +359,7 @@ function openEventModal(id, defaultDate, defaultHour) {
         ((ev ? ev.color === c : c === '#58a6ff') ? ' class="swatch selected"' : '') + '></div>'
     ).join('');
 
-    const alexaHtml = buildAlexaPickerHtml(ev ? (ev.alexaDatapoints || []) : [], 'ev-alexa');
+    const alexaHtml = buildAlexaPickerHtml(ev ? (ev.alexaDatapoints || []) : [], 'ev-alexa', ev ? (ev.alexaVolumes || {}) : {});
     const hasSegments = editingSegments.length > 0;
 
     modal.innerHTML =
@@ -534,7 +578,8 @@ async function saveEvent() {
         iobDatapointValue: true,
         alexaMessage:      msgBuilderVisible ? '' : (document.getElementById('ev-alexa-msg') ? document.getElementById('ev-alexa-msg').value.trim() : ''),
         messageSegments:   msgBuilderVisible ? JSON.parse(JSON.stringify(editingSegments)) : [],
-        alexaDatapoints
+        alexaDatapoints,
+        alexaVolumes: collectAlexaVolumes('ev-alexa')
     };
     try {
         if (editEventId) {
@@ -674,7 +719,7 @@ function openBdayModal(id) {
     editBdayId = id;
     const bd = id ? birthdays.find(b => b.id === id) : null;
     const modal = document.getElementById('bday-modal-inner');
-    const alexaHtml = buildAlexaPickerHtml(bd ? (bd.alexaDatapoints || []) : [], 'bd-alexa');
+    const alexaHtml = buildAlexaPickerHtml(bd ? (bd.alexaDatapoints || []) : [], 'bd-alexa', bd ? (bd.alexaVolumes || {}) : {});
 
     modal.innerHTML =
         '<h3>' + (bd ? '\u2702\uFE0F Geburtstag bearbeiten' : '\uD83C\uDF82 Neuer Geburtstag') + '</h3>' +
@@ -704,7 +749,8 @@ async function saveBday() {
         name, date,
         notifyDaysBefore: parseInt(document.getElementById('bd-notify').value) || 1,
         alexaMessage:     document.getElementById('bd-alexa-msg').value.trim(),
-        alexaDatapoints:  collectAlexaDatapoints('bd-alexa')
+        alexaDatapoints:  collectAlexaDatapoints('bd-alexa'),
+        alexaVolumes:    collectAlexaVolumes('bd-alexa')
     };
     try {
         if (editBdayId) {
@@ -728,29 +774,131 @@ async function deleteBday(id) {
     renderBirthdays();
 }
 
-// ── Alexa Picker ───────────────────────────────────────────────────────────────
-function buildAlexaPickerHtml(selected, prefix) {
-    let html = '<div class="form-section" style="margin-top:12px;">Alexa Ger\u00E4te ausw\u00E4hlen</div>';
-    if (alexaDevs.length === 0) {
-        return html + '<div style="font-size:12px;color:var(--muted);">Keine Ger\u00E4te konfiguriert. System-Tab \u2192 Alexa Ger\u00E4te.</div>';
+// ── Alexa Picker ─────────────────────────────────────────────────────────────
+// selected = string[]  (stateIds),  volumes = { stateId: number }
+function buildAlexaPickerHtml(selected, prefix, volumes) {
+    selected = selected || [];
+    volumes  = volumes  || {};
+    var selJson = JSON.stringify(selected);
+    var volJson = JSON.stringify(volumes);
+    return '<div class="form-section" style="margin-top:12px;">\uD83D\uDDE3 Alexa Ger\u00E4te</div>' +
+        '<div id="' + prefix + '-container" data-selected="' + esc(selJson) + '" data-volumes="' + esc(volJson) + '">' +
+        '<div id="' + prefix + '-chips" class="alexa-chip-list">' + _buildAlexaChips(selected, volumes, prefix) + '</div>' +
+        '<div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap;">' +
+        '<select id="' + prefix + '-sel" style="flex:1;min-width:180px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:13px;">' +
+        _buildAlexaOptions(selected) +
+        '</select>' +
+        '<button class="btn btn-ghost btn-sm" data-p="' + prefix + '" onclick="refreshAlexaInModal(this.dataset.p)" title="Ger\u00E4te aus ioBroker laden">\uD83D\uDD04</button>' +
+        '<button class="btn btn-success btn-sm" data-p="' + prefix + '" onclick="addAlexaToTask(this.dataset.p)">+ Hinzuf\u00FCgen</button>' +
+        '</div>' +
+        '<div id="' + prefix + '-hint" style="font-size:11px;color:var(--dim);margin-top:4px;">' +
+        (discoveredAlexaDevs.length === 0 ? '\uD83D\uDD04 Auf Aktualisieren klicken um Ger\u00E4te zu laden.' : discoveredAlexaDevs.length + ' Ger\u00E4te verf\u00FCgbar') +
+        '</div></div>';
+}
+
+function _buildAlexaOptions(exclude) {
+    if (discoveredAlexaDevs.length === 0) {
+        return '<option value="">-- Erst \uD83D\uDD04 klicken zum Laden --</option>';
     }
-    html += '<div id="' + prefix + '-list" class="alexa-chip-list">';
-    alexaDevs.forEach(dev => {
-        const checked = selected.includes(dev.stateId);
-        html += '<label class="alexa-chip" style="cursor:pointer;">' +
-            '<input type="checkbox" data-state="' + esc(dev.stateId) + '" ' + (checked ? 'checked' : '') + ' style="width:auto;margin:0;">' +
-            '<span>\uD83D\uDDE3 <strong>' + esc(dev.name) + '</strong></span>' +
-            '<span style="font-size:10px;color:var(--dim);">' + esc(dev.stateId) + '</span>' +
-            '</label>';
-    });
-    return html + '</div>';
+    return '<option value="">-- Ger\u00E4t ausw\u00E4hlen --</option>' +
+        discoveredAlexaDevs
+            .filter(function(d) { return !exclude.includes(d.stateId); })
+            .map(function(d) { return '<option value="' + esc(d.stateId) + '">' + esc(d.name) + '</option>'; })
+            .join('');
+}
+
+function _buildAlexaChips(selected, volumes, prefix) {
+    if (!selected || selected.length === 0) {
+        return '<div style="font-size:12px;color:var(--muted);padding:4px 0;">Noch kein Ger\u00E4t gew\u00E4hlt.</div>';
+    }
+    return selected.map(function(sid) {
+        var dev  = discoveredAlexaDevs.find(function(d) { return d.stateId === sid; });
+        var name = dev ? dev.name : (sid.split('.')[3] || sid);
+        var vol  = (volumes && volumes[sid] != null) ? String(volumes[sid]) : '';
+        return '<div class="alexa-chip" style="margin-bottom:6px;flex-direction:column;align-items:stretch;">' +
+            '<div style="display:flex;align-items:center;gap:6px;">' +
+            '<span>\uD83D\uDDE3 <strong>' + esc(name) + '</strong></span>' +
+            '<span style="font-size:10px;color:var(--dim);flex:1;overflow:hidden;text-overflow:ellipsis;">' + esc(sid) + '</span>' +
+            '<button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:0 4px;flex-shrink:0;" ' +
+            'data-sid="' + esc(sid) + '" data-p="' + prefix + '" onclick="removeAlexaFromTask(this.dataset.p,this.dataset.sid)">&times;</button>' +
+            '</div>' +
+            '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;">' +
+            '<span style="font-size:11px;color:var(--muted);white-space:nowrap;">\uD83D\uDD0A Lautst\u00E4rke:</span>' +
+            '<input type="range" min="0" max="100" value="' + (vol||'') + '" step="5" style="flex:1;accent-color:var(--blue);" ' +
+            'data-sid="' + esc(sid) + '" data-p="' + prefix + '" oninput="updateAlexaVolume(this.dataset.p,this.dataset.sid,this.value);document.getElementById(\'' + prefix + '-vol-' + sid.slice(-8) + '\').textContent=this.value">' +
+            '<span id="' + prefix + '-vol-' + sid.slice(-8) + '" style="font-size:11px;color:var(--blue);min-width:28px;text-align:right;">' + (vol || '–') + '</span>' +
+            '<span style="font-size:11px;color:var(--dim);">%</span>' +
+            '</div></div>';
+    }).join('');
+}
+
+async function refreshAlexaInModal(prefix) {
+    var hint = document.getElementById(prefix + '-hint');
+    var sel  = document.getElementById(prefix + '-sel');
+    if (hint) hint.textContent = '\u23F3 Lade...';
+    try {
+        var d = await api('GET', '/api/alexa-discover');
+        discoveredAlexaDevs = d.devices || [];
+        var container = document.getElementById(prefix + '-container');
+        var cur = container ? JSON.parse(container.dataset.selected || '[]') : [];
+        if (sel) sel.innerHTML = _buildAlexaOptions(cur);
+        if (hint) hint.textContent = discoveredAlexaDevs.length + ' Ger\u00E4te gefunden';
+    } catch(e) {
+        if (hint) hint.textContent = 'Fehler: ' + e.message;
+    }
+}
+
+function addAlexaToTask(prefix) {
+    var sel = document.getElementById(prefix + '-sel');
+    if (!sel || !sel.value) { if(sel) sel.focus(); return; }
+    var stateId   = sel.value;
+    var container = document.getElementById(prefix + '-container');
+    if (!container) return;
+    var cur = JSON.parse(container.dataset.selected || '[]');
+    var vols = JSON.parse(container.dataset.volumes  || '{}');
+    if (cur.includes(stateId)) return;
+    cur.push(stateId);
+    container.dataset.selected = JSON.stringify(cur);
+    document.getElementById(prefix + '-chips').innerHTML = _buildAlexaChips(cur, vols, prefix);
+    sel.innerHTML = _buildAlexaOptions(cur);
+    sel.value = '';
+}
+
+function updateAlexaVolume(prefix, stateId, value) {
+    var container = document.getElementById(prefix + '-container');
+    if (!container) return;
+    var vols = JSON.parse(container.dataset.volumes || '{}');
+    vols[stateId] = parseInt(value);
+    container.dataset.volumes = JSON.stringify(vols);
+}
+
+function removeAlexaFromTask(prefix, stateId) {
+    var container = document.getElementById(prefix + '-container');
+    if (!container) return;
+    var cur  = JSON.parse(container.dataset.selected || '[]');
+    var vols = JSON.parse(container.dataset.volumes  || '{}');
+    cur = cur.filter(function(s) { return s !== stateId; });
+    delete vols[stateId];
+    container.dataset.selected = JSON.stringify(cur);
+    container.dataset.volumes  = JSON.stringify(vols);
+    document.getElementById(prefix + '-chips').innerHTML = _buildAlexaChips(cur, vols, prefix);
+    var sel = document.getElementById(prefix + '-sel');
+    if (sel) sel.innerHTML = _buildAlexaOptions(cur);
 }
 
 function collectAlexaDatapoints(prefix) {
-    const list = document.getElementById(prefix + '-list');
-    if (!list) return [];
-    return Array.from(list.querySelectorAll('input[type=checkbox]:checked')).map(cb => cb.dataset.state);
+    var container = document.getElementById(prefix + '-container');
+    if (!container) return [];
+    try { return JSON.parse(container.dataset.selected || '[]'); } catch(e) { return []; }
 }
+
+function collectAlexaVolumes(prefix) {
+    var container = document.getElementById(prefix + '-container');
+    if (!container) return {};
+    try { return JSON.parse(container.dataset.volumes || '{}'); } catch(e) { return {}; }
+}
+
+
 
 // ── LOGS TAB ──────────────────────────────────────────────────────────────────
 function renderLogs() {
