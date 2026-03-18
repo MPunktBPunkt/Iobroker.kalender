@@ -1,4 +1,4 @@
-# Schnittstellen.md — iobroker.kalender v0.5.0
+# Schnittstellen.md — iobroker.kalender v0.5.5
 
 ## HTTP REST-API (Port 8095)
 

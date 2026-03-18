@@ -1,6 +1,6 @@
 # iobroker.kalender
 
-[![Version](https://img.shields.io/badge/version-0.5.4-blue)](https://github.com/MPunktBPunkt/iobroker.kalender)
+[![Version](https://img.shields.io/badge/version-0.5.5-blue)](https://github.com/MPunktBPunkt/iobroker.kalender)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D16-brightgreen)](https://nodejs.org)
 
@@ -95,6 +95,31 @@ Die Seriennummer findet man in ioBroker → Objects → alexa2.0.Echo-Devices.
 ---
 
 ## Changelog
+
+### 0.5.5 (2026-03-18)
+- Tagesansicht: geht jetzt vollständig bis 24 Uhr (overflow-Bug behoben)
+- Monats-/Wochenansicht: Klick öffnet Tages-Panel unten statt Event-Modal
+- Aufgaben: neuer "⏰⏰ Wecker"-Tab mit großer Uhrzeitanzeige + Farbmarkierung
+- Erinnerung vorher jetzt als Badge auf der Aufgabenkarte sichtbar
+
+### 0.5.4 (2026-03-17)
+- Wochentage bei wöchentlicher Wiederholung (Mo/Di/Mi...)
+- Werktags-Preset (Mo–Fr automatisch)
+- Erinnerung X Minuten/Stunden/Tage vorher (Alexa-Ansage)
+- Uhrzeit = Auslöser (kein doppeltes Feld mehr)
+
+### 0.5.3 (2026-03-17)
+- Zeitzone-Dashboard im System-Tab (Linux vs. ioBroker Vergleich)
+- Zeitzone synchronisieren per Button (sudo timedatectl)
+- NTP-Sync-Button
+
+### 0.5.2 (2026-03-17)
+- Zeitzone automatisch aus ioBroker system.config lesen
+- Kein manuelles Konfigurieren mehr nötig
+
+### 0.5.1 (2026-03-17)
+- Bugfix: Aufgaben anlegen ging nicht (const ev vor Verwendung deklariert)
+- Alexa-Abschnitt aus System-Tab entfernt (nur noch im Aufgaben-Modal)
 
 ### 0.5.0 (2026-03-17)
 - Zeitzone-Einstellung in Admin-Konfiguration (Standard: Europe/Berlin)
