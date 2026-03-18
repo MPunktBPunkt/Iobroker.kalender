@@ -1,4 +1,4 @@
-/* iobroker.kalender — Browser-App v0.5.4 */
+/* iobroker.kalender — Browser-App v0.5.5 */
 'use strict';
 
 // ── Global State ─────────────────────────────────────────────────────────────
@@ -339,7 +339,7 @@ function renderDayGrid() {
     const ds = dateToStr(currentDate), today = todayStr(), now = new Date();
     const curHour = now.getHours(), curMin = now.getMinutes();
     const isToday = ds === today;
-    let html = '<div style="height:calc(100vh - 190px);overflow-y:auto;border:1px solid var(--border);border-radius:8px;overflow:hidden;">';
+    let html = '<div style="height:calc(100vh - 190px);overflow-y:auto;border:1px solid var(--border);border-radius:8px;">';
 
     for (let h = 0; h < 24; h++) {
         const slotEvs = getEventsForDate(ds).filter(e => {
@@ -374,8 +374,86 @@ function renderDayGrid() {
     return html + '</div>';
 }
 
-function calCellClick(ds) { openEventModal(null, ds); }
-function calSlotClick(ds, h) { openEventModal(null, ds, h); }
+function calCellClick(ds) { showDayPanel(ds); }
+function calSlotClick(ds, h) { showDayPanel(ds, h); }
+
+let _dayPanelDate = null;
+
+function showDayPanel(ds, scrollHour) {
+    _dayPanelDate = ds;
+    const d    = new Date(ds + 'T12:00:00');
+    const label = ['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'][(d.getDay()+6)%7]
+                + ', ' + d.getDate() + '. '
+                + ['Januar','Februar','M\u00E4rz','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'][d.getMonth()]
+                + ' ' + d.getFullYear();
+
+    const dayEvs = getEventsForDate(ds);
+    const dayBds = getBirthdaysForDate(ds);
+    const all    = [...dayBds.map(b=>({type:'bday',obj:b})), ...dayEvs.map(e=>({type:'ev',obj:e}))];
+    all.sort((a,b) => {
+        const ta = a.type==='ev' ? (a.obj.triggerTime||a.obj.time||'') : '';
+        const tb = b.type==='ev' ? (b.obj.triggerTime||b.obj.time||'') : '';
+        return ta.localeCompare(tb);
+    });
+
+    // Remove existing panel
+    const existing = document.getElementById('day-detail-panel');
+    if (existing) existing.remove();
+
+    if (all.length === 0 && !document.getElementById('day-detail-panel')) {
+        // No events: open new event modal as before
+        openEventModal(null, ds);
+        return;
+    }
+
+    const rows = all.map(item => {
+        if (item.type === 'bday') {
+            const b = item.obj;
+            const age = new Date().getFullYear() - new Date(b.date+'T12:00:00').getFullYear();
+            return '<tr>' +
+                '<td style="padding:8px 10px;color:var(--muted);font-size:12px;font-family:var(--mono);white-space:nowrap;">&nbsp;</td>' +
+                '<td style="padding:8px 10px;">' +
+                '<span style="background:#3d220033;color:#f0883e;border-left:3px solid #f0883e;border-radius:4px;padding:4px 8px;display:inline-block;">' +
+                '\uD83C\uDF82 ' + esc(b.name) + ' (' + age + '. Geburtstag)</span></td>' +
+                '<td style="padding:8px 10px;">' +
+                '<button class="btn btn-ghost btn-sm" data-bid="' + esc(b.id) + '" onclick="openBdayModal(this.dataset.bid)">\u270F\uFE0F</button></td></tr>';
+        }
+        const e   = item.obj, col = e.color || '#58a6ff';
+        const isIcs = e.source === 'ics';
+        const t   = e.triggerTime || e.time || '';
+        const rec = (e.recurrence && e.recurrence !== 'none')
+            ? ' <span class="badge badge-purple" style="font-size:10px;">' + recLabel(e.recurrence) + '</span>' : '';
+        return '<tr style="cursor:' + (isIcs?'default':'pointer') + ';" ' +
+            (isIcs ? '' : 'data-eid="' + esc(e.id) + '" onclick="openEventModal(this.dataset.eid)"') + '>' +
+            '<td style="padding:8px 10px;color:var(--blue);font-size:13px;font-weight:700;font-family:var(--mono);white-space:nowrap;">' +
+            (t ? '\u23F0 ' + t : '&nbsp;') + '</td>' +
+            '<td style="padding:8px 10px;">' +
+            '<span style="border-left:3px solid ' + col + ';padding-left:8px;font-weight:600;">' + esc(e.title) + rec + '</span>' +
+            (e.description ? '<div style="font-size:11px;color:var(--muted);margin-top:2px;">' + esc(e.description.substring(0,80)) + '</div>' : '') +
+            (e.reminderBefore && e.reminderBefore.value ? '<div style="font-size:10px;color:var(--yellow);">\uD83D\uDD14 ' + e.reminderBefore.value + ' ' + {minutes:'min',hours:'h',days:'Tage'}[e.reminderBefore.unit||'minutes'] + ' vorher</div>' : '') +
+            '</td>' +
+            '<td style="padding:8px 10px;white-space:nowrap;">' +
+            (isIcs ? '<span class="badge badge-purple" style="font-size:10px;">\uD83D\uDCC6 ICS</span>' :
+                '<button class="btn btn-ghost btn-sm" data-eid="' + esc(e.id) + '" onclick="event.stopPropagation();openEventModal(this.dataset.eid)">\u270F\uFE0F</button>') +
+            '</td></tr>';
+    }).join('');
+
+    const panel = document.createElement('div');
+    panel.id = 'day-detail-panel';
+    panel.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:var(--bg1);border-top:2px solid var(--blue);border-radius:16px 16px 0 0;z-index:500;max-height:55vh;overflow-y:auto;box-shadow:0 -4px 24px rgba(0,0,0,.4);';
+    panel.innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg1);z-index:1;">' +
+        '<strong>' + label + '</strong>' +
+        '<div style="display:flex;gap:8px;">' +
+        '<button class="btn btn-primary btn-sm" data-date="' + ds + '" onclick="openEventModal(null,this.dataset.date)">+ Termin</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="var p=document.getElementById(\'day-detail-panel\');if(p)p.remove()">\u2715</button>' +
+        '</div></div>' +
+        (all.length === 0
+            ? '<div style="padding:20px;text-align:center;color:var(--muted);">Keine Termine</div>'
+            : '<table style="width:100%;border-collapse:collapse;">' + rows + '</table>');
+
+    document.getElementById('app').appendChild(panel);
+}
 function setView(v) { currentView = v; renderCalendar(); }
 function calToday() { currentDate = new Date(); renderCalendar(); }
 function calPrev() {
@@ -721,7 +799,8 @@ function renderTasks() {
     if (taskFilter === 'today')   filtered = filtered.filter(e => !e.done && occursOnDate(e, today));
     if (taskFilter === 'week')    filtered = filtered.filter(e => !e.done && e.date >= today && e.date <= weekEnd);
     if (taskFilter === 'done')    filtered = filtered.filter(e => e.done);
-    if (taskFilter === 'timed')   filtered = filtered.filter(e => !e.done && e.triggerTime);
+    if (taskFilter === 'timed')   filtered = filtered.filter(e => !e.done && (e.triggerTime || e.time));
+    if (taskFilter === 'wecker')  filtered = filtered.filter(e => !e.done && (e.triggerTime || e.time));
     if (taskFilter === 'all')     filtered = filtered.filter(e => isActive(e));
 
     filtered.sort((a,b) => {
@@ -732,7 +811,7 @@ function renderTasks() {
         return (a.date || '').localeCompare(b.date || '');
     });
 
-    const filters = [['all','Alle'],['today','Heute'],['week','Woche'],['timed','\u23F0 Geplant'],['done','Erledigt']];
+    const filters = [['all','Alle'],['today','Heute'],['week','Woche'],['timed','\u23F0 Geplant'],['wecker','\u23F0\u23F0 Wecker'],['done','Erledigt']];
     const filterBar = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">' +
         '<div class="view-btns">' +
         filters.map(([k,l]) => '<div class="view-btn' + (taskFilter===k?' active':'') + '" data-f="' + k + '" onclick="setTaskFilter(this.dataset.f)">' + l + '</div>').join('') +
@@ -741,6 +820,10 @@ function renderTasks() {
         '<span style="margin-left:auto;color:var(--muted);font-size:12px;">' + filtered.length + ' Eintr\u00E4ge</span>' +
         '</div>';
 
+    if (taskFilter === 'wecker') {
+        panel.innerHTML = filterBar + renderWecker(filtered);
+        return;
+    }
     if (filtered.length === 0) {
         panel.innerHTML = filterBar + '<div class="empty-state"><div class="icon">\uD83D\uDDD3\uFE0F</div><div>Keine Eintr\u00E4ge</div></div>';
         return;
@@ -754,7 +837,9 @@ function renderTasks() {
         return '<div class="task-card' + (e.done ? ' done' : '') + '" style="border-left:3px solid ' + (e.done ? 'var(--dim)' : col) + ';">' +
             '<div class="task-check' + (e.done ? ' checked' : '') + '" data-eid="' + e.id + '" onclick="toggleEventDone(this.dataset.eid)">' + (e.done ? '\u2713' : '') + '</div>' +
             '<div class="task-body">' +
-            '<div class="task-title">' + (hasTrigger ? '<span style="color:var(--yellow);">\u23F0 ' + e.triggerTime + '</span> ' : '') + esc(e.title) + '</div>' +
+            '<div class="task-title">' +
+            (hasTrigger ? '<span style="color:var(--yellow);font-size:16px;font-weight:800;font-family:var(--mono);">\u23F0 ' +
+            (e.triggerTime||e.time) + '</span> ' : '') + esc(e.title) + '</div>' +
             '<div class="task-meta">' +
             (e.date ? '<span class="badge badge-blue">' + fmtDateShort(e.date) + '</span>' : '') +
             (e.recurrence && e.recurrence !== 'none' ? '<span class="badge badge-purple">' + recLabel(e.recurrence) +
@@ -777,6 +862,53 @@ function renderTasks() {
     }).join('');
 
     panel.innerHTML = filterBar + cards;
+}
+
+
+function renderWecker(items) {
+    const now  = new Date();
+    const hhmm = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+    const today = todayStr();
+
+    if (items.length === 0) {
+        return '<div class="empty-state"><div class="icon">\u23F0</div><div>Keine geplanten Aufgaben</div></div>';
+    }
+
+    // Sort by time
+    const sorted = [...items].sort((a,b) => {
+        const ta = a.triggerTime||a.time||'99:99';
+        const tb = b.triggerTime||b.time||'99:99';
+        return ta.localeCompare(tb);
+    });
+
+    return sorted.map(e => {
+        const t      = e.triggerTime || e.time || '';
+        const col    = e.color || '#58a6ff';
+        const isPast = t && t < hhmm && occursOnDate(e, today);
+        const isNow  = t && t === hhmm;
+        const rec    = e.recurrence && e.recurrence !== 'none';
+
+        return '<div class="task-card" style="border-left:4px solid ' + col + ';' + (isNow ? 'background:var(--bg3);' : '') + '">' +
+            '<div style="display:flex;align-items:center;gap:14px;flex:1;">' +
+            '<div style="text-align:center;min-width:64px;">' +
+            '<div style="font-size:26px;font-weight:900;font-family:var(--mono);color:' +
+            (isNow ? 'var(--green)' : isPast ? 'var(--dim)' : col) + ';">' + (t || '--:--') + '</div>' +
+            '<div style="font-size:10px;color:var(--muted);">' + (isNow ? '\u25B6 Jetzt' : isPast ? 'Vorbei' : 'Heute') + '</div>' +
+            '</div>' +
+            '<div style="flex:1;">' +
+            '<div style="font-size:15px;font-weight:600;">' + esc(e.title) + '</div>' +
+            '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">' +
+            (rec ? '<span class="badge badge-purple">' + recLabel(e.recurrence) + '</span>' : '') +
+            (e.reminderBefore && e.reminderBefore.value ? '<span class="badge badge-yellow">\uD83D\uDD14 ' + e.reminderBefore.value + ' ' + {minutes:'min',hours:'h',days:'d'}[e.reminderBefore.unit||'minutes'] + ' vorher</span>' : '') +
+            (e.alexaDatapoints && e.alexaDatapoints.length ? '<span class="badge badge-orange">\uD83D\uDDE3 Alexa</span>' : '') +
+            '</div>' +
+            '</div>' +
+            '<div style="display:flex;gap:6px;">' +
+            '<button class="btn btn-ghost btn-sm" title="Jetzt ausf\u00FChren" data-eid="' + e.id + '" onclick="triggerEventNow(this.dataset.eid)">\u25B6</button>' +
+            '<button class="btn btn-ghost btn-sm" data-eid="' + e.id + '" onclick="openEventModal(this.dataset.eid)">\u270F\uFE0F</button>' +
+            '</div>' +
+            '</div></div>';
+    }).join('');
 }
 
 function setTaskFilter(f) { taskFilter = f; renderTasks(); }
