@@ -138,7 +138,7 @@ class KalenderAdapter extends utils.Adapter {
     async onReady() {
         try {
         try { this.pack = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')); }
-        catch(e) { this.pack = { version: '0.5.5' }; }
+        catch(e) { this.pack = { version: '0.5.6' }; }
 
         this.alexaDevices = [];
         try { const raw = this.config && this.config.alexaDevices; if (raw) this.alexaDevices = JSON.parse(raw); } catch(e) {}
@@ -845,6 +845,46 @@ class KalenderAdapter extends utils.Adapter {
             } catch(e) {
                 json({ ok: false, error: e.message });
             }
+            return;
+        }
+
+        // ── Adapter/Instance list for DP picker ──
+        if (url === '/api/adapter-instances' && method === 'GET') {
+            try {
+                const objs = await this.getForeignObjectsAsync('system.adapter.*', 'instance');
+                const instances = [];
+                for (const id of Object.keys(objs || {})) {
+                    // id = system.adapter.freeair100.0
+                    const parts = id.split('.');
+                    if (parts.length < 4) continue;
+                    const name = parts[2] + '.' + parts[3];  // freeair100.0
+                    if (!instances.includes(name)) instances.push(name);
+                }
+                instances.sort();
+                json({ instances });
+            } catch(e) { json({ instances: [], error: e.message }); }
+            return;
+        }
+
+        if (url === '/api/instance-states' && method === 'GET') {
+            const inst = query.instance; // e.g. freeair100.0
+            if (!inst) { json({ states: [] }); return; }
+            try {
+                const objs = await this.getForeignObjectsAsync(inst + '.*', 'state');
+                const states = [];
+                for (const [id, obj] of Object.entries(objs || {})) {
+                    if (!obj || !obj.common) continue;
+                    const shortId = id.slice(inst.length + 1); // strip "freeair100.0."
+                    const type  = obj.common.type  || 'mixed';
+                    const nameRaw = obj.common.name;
+                    const name  = typeof nameRaw === 'object' ? (nameRaw.de || nameRaw.en || shortId) : (nameRaw || shortId);
+                    const unit  = obj.common.unit || '';
+                    const write = obj.common.write !== false;
+                    states.push({ id, shortId, type, name: String(name), unit, write });
+                }
+                states.sort((a,b) => a.shortId.localeCompare(b.shortId));
+                json({ states });
+            } catch(e) { json({ states: [], error: e.message }); }
             return;
         }
 
