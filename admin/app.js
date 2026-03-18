@@ -1,4 +1,4 @@
-/* iobroker.kalender — Browser-App v0.5.5 */
+/* iobroker.kalender — Browser-App v0.5.6 */
 'use strict';
 
 // ── Global State ─────────────────────────────────────────────────────────────
@@ -18,6 +18,8 @@ let logPollTimer   = null;
 let activeTab      = 'cal';
 let editingSegments  = [];
 let editingDpActions = [];  // [{id, type, value, name, unit}]
+let _dpInstances     = [];  // cached adapter instances
+let _dpStates        = {};  // { 'inst.0': [{id,shortId,type,name,unit}] }
 
 const COLORS       = ['#58a6ff','#3fb950','#f0883e','#f85149','#a371f7','#e3b341','#ff7b72','#39d353'];
 const WEEKDAYS_S   = ['Mo','Di','Mi','Do','Fr','Sa','So'];
@@ -397,14 +399,10 @@ function showDayPanel(ds, scrollHour) {
     });
 
     // Remove existing panel
-    const existing = document.getElementById('day-detail-panel');
-    if (existing) existing.remove();
+    var _old = document.getElementById('day-detail-panel');
+    if (_old) _old.remove();
+    // Always show panel (even empty days get a '+ Termin' option)
 
-    if (all.length === 0 && !document.getElementById('day-detail-panel')) {
-        // No events: open new event modal as before
-        openEventModal(null, ds);
-        return;
-    }
 
     const rows = all.map(item => {
         if (item.type === 'bday') {
@@ -476,6 +474,7 @@ function openEventModal(id, defaultDate, defaultHour) {
     editEventId      = id;
     editingSegments  = [];
     const ev     = id ? events.find(e => e.id === id) : null;  // must be BEFORE ev is used
+    loadDpInstances(); // preload adapter instances for DP picker
     const modal  = document.getElementById('event-modal-inner');
     // Build dpActions from existing event or start empty
     if (ev && ev.dpActions && ev.dpActions.length > 0) {
@@ -556,7 +555,7 @@ function openEventModal(id, defaultDate, defaultHour) {
         ['minutes','hours','days'].map(u => '<option value="' + u + '"' + (ev && ev.reminderBefore && ev.reminderBefore.unit === u ? ' selected' : '') + '>' +
             { minutes: 'Minuten', hours: 'Stunden', days: 'Tage' }[u] + '</option>').join('') +
         '</select></div></div></div>' +
-        '<div style="font-size:11px;color:var(--muted);margin-top:6px;">Die Uhrzeit ist gleichzeitig der Ausl\u00F6ser f\u00FCr Alexa und Datenpunkt-Aktionen.</div>' +
+        '<div style="font-size:11px;color:var(--muted);margin-top:6px;">Die Uhrzeit ist gleichzeitig der Ausl\u00F6ser. Die Erinnerung wird X Minuten/Stunden/Tage davor ausgel\u00F6st.</div>' +
         '</div>' +
 
         // ── DATAPOINT ACTION ──────────────────────────────────────────────────
@@ -1013,6 +1012,61 @@ async function deleteBday(id) {
 }
 
 
+
+// ── DP Picker Helpers ─────────────────────────────────────────────────────────
+async function loadDpInstances() {
+    if (_dpInstances.length > 0) return; // cached
+    try {
+        const d = await api('GET', '/api/adapter-instances');
+        _dpInstances = d.instances || [];
+        // Re-render all dp-action rows to show instances
+        if (editingDpActions.length > 0) {
+            var el = document.getElementById('dp-actions-list');
+            if (el) el.innerHTML = buildDpActionsHtml(editingDpActions);
+        }
+    } catch(e) {}
+}
+
+async function onInstChange(idx, inst) {
+    updateDpAction(idx, 'id', '');
+    updateDpAction(idx, 'name', '');
+    if (!inst) return;
+    // Load states for this instance if not cached
+    if (!_dpStates[inst]) {
+        try {
+            const d = await api('GET', '/api/instance-states?instance=' + encodeURIComponent(inst));
+            _dpStates[inst] = (d.states || []).filter(function(s) { return s.write; });
+        } catch(e) { _dpStates[inst] = []; }
+    }
+    // Re-render
+    var el = document.getElementById('dp-actions-list');
+    if (el) el.innerHTML = buildDpActionsHtml(editingDpActions);
+}
+
+function onStateChange(idx, stateId) {
+    if (!stateId) return;
+    updateDpAction(idx, 'id', stateId);
+    // Get type from option data-type attribute
+    var sel = document.getElementById('dp-state-sel-' + idx);
+    if (sel && sel.selectedOptions[0]) {
+        var t = sel.selectedOptions[0].dataset.type;
+        if (t === 'boolean' || t === 'number' || t === 'string') {
+            changeDpType(idx, t);
+            return; // changeDpType re-renders
+        }
+    }
+    loadDpInfo(idx, stateId);
+}
+
+function syncInstSel(idx, stateId) {
+    // When user types in manual ID field, sync the instance dropdown
+    if (!stateId || stateId.indexOf('.') < 0) return;
+    var dot2 = stateId.indexOf('.', stateId.indexOf('.')+1);
+    if (dot2 < 0) return;
+    var inst = stateId.slice(0, dot2);
+    updateDpAction(idx, 'id', stateId);
+}
+
 // ── Datapoint Action Builder ──────────────────────────────────────────────────
 function buildDpActionsHtml(actions) {
     if (!actions || actions.length === 0) {
@@ -1026,7 +1080,7 @@ function buildDpActionsHtml(actions) {
         var valInput = '';
         if (a.type === 'boolean') {
             valInput = '<select class="seg-input" data-idx="' + i + '" onchange="updateDpAction(' + i + ',\'value\',this.value)">' +
-                '<option value="true"' + (String(a.value) === 'true' ? ' selected' : '') + '>true</option>' +
+                '<option value="true"'  + (String(a.value) === 'true'  ? ' selected' : '') + '>true</option>' +
                 '<option value="false"' + (String(a.value) === 'false' ? ' selected' : '') + '>false</option>' +
                 '</select>';
         } else if (a.type === 'number') {
@@ -1036,21 +1090,41 @@ function buildDpActionsHtml(actions) {
             valInput = '<input class="seg-input" type="text" placeholder="Text" value="' + esc(String(a.value)) + '" ' +
                 'data-idx="' + i + '" oninput="updateDpAction(' + i + ',\'value\',this.value)">';
         }
-        return '<div class="seg-row" style="align-items:flex-start;">' +
-            '<div class="seg-inner" style="gap:6px;">' +
-            '<div style="display:flex;gap:6px;align-items:center;">' +
-            '<input class="seg-input" type="text" placeholder="State-ID  z.B. pool.0.pump" value="' + esc(a.id) + '" style="flex:1;" ' +
-            'data-idx="' + i + '" oninput="updateDpAction(' + i + ',\'id\',this.value)" ' +
-            'onblur="loadDpInfo(' + i + ',this.value)">' +
-            '<button class="btn btn-ghost btn-sm" style="flex-shrink:0;" data-idx="' + i + '" onclick="loadDpInfoById(parseInt(this.dataset.idx))">\uD83D\uDD04</button>' +
+        // Parse existing id into instance + shortId
+        var instPart = '', shortPart = a.id || '';
+        if (a.id && a.id.indexOf('.') > -1) {
+            var dot2 = a.id.indexOf('.', a.id.indexOf('.')+1);
+            if (dot2 > 0) { instPart = a.id.slice(0, dot2); shortPart = a.id.slice(dot2+1); }
+        }
+        return '<div class="seg-row" style="align-items:flex-start;flex-direction:column;">' +
+            // Row 1: instance selector + state selector
+            '<div style="display:flex;gap:6px;width:100%;margin-bottom:5px;">' +
+            '<select class="seg-input" style="width:160px;flex-shrink:0;" data-idx="' + i + '" onchange="onInstChange(' + i + ',this.value)">' +
+            '<option value="">-- Adapter --</option>' +
+            (_dpInstances.map(function(inst) {
+                return '<option value="' + esc(inst) + '"' + (inst === instPart ? ' selected' : '') + '>' + esc(inst) + '</option>';
+            }).join('')) +
+            '</select>' +
+            '<select class="seg-input" style="flex:1;" id="dp-state-sel-' + i + '" data-idx="' + i + '" onchange="onStateChange(' + i + ',this.value)">' +
+            '<option value="">-- Datenpunkt --</option>' +
+            ((_dpStates[instPart] || []).map(function(s) {
+                return '<option value="' + esc(s.id) + '"' + (s.id === a.id ? ' selected' : '') + ' data-type="' + esc(s.type) + '">' +
+                    esc(s.shortId) + (s.name && s.name !== s.shortId ? ' — ' + esc(s.name.substring(0,30)) : '') + '</option>';
+            }).join('')) +
+            '</select>' +
+            '<button class="btn btn-ghost btn-sm" style="flex-shrink:0;" data-idx="' + i + '" onclick="loadDpInfoById(parseInt(this.dataset.idx))" title="Typ laden">\uD83D\uDD04</button>' +
             '</div>' +
-            (a.name ? '<div style="font-size:10px;color:var(--green);">' + esc(a.name) + (a.unit ? ' [' + esc(a.unit) + ']' : '') + '</div>' : '') +
-            '<div style="display:flex;gap:6px;align-items:center;">' +
+            // Row 2: manual ID display + type + value
+            '<div style="display:flex;gap:6px;align-items:center;width:100%;">' +
+            '<input class="seg-input" type="text" placeholder="State-ID" value="' + esc(a.id || '') + '" style="flex:1;font-size:11px;color:var(--muted);" ' +
+            'data-idx="' + i + '" oninput="updateDpAction(' + i + ',\'id\',this.value);syncInstSel(' + i + ',this.value)" ' +
+            'onblur="loadDpInfo(' + i + ',this.value)">' +
             '<select class="seg-type-sel" data-idx="' + i + '" onchange="changeDpType(' + i + ',this.value)">' + typeOpts + '</select>' +
             valInput +
-            '</div></div>' +
-            '<button style="background:var(--bg3);border:1px solid var(--border);color:var(--red);border-radius:4px;padding:4px 8px;cursor:pointer;font-size:12px;flex-shrink:0;margin-top:2px;" ' +
+            '<button style="background:var(--bg3);border:1px solid var(--border);color:var(--red);border-radius:4px;padding:4px 8px;cursor:pointer;font-size:12px;flex-shrink:0;" ' +
             'data-idx="' + i + '" onclick="removeDpAction(parseInt(this.dataset.idx))">&times;</button>' +
+            '</div>' +
+            (a.name ? '<div style="font-size:10px;color:var(--green);margin-top:3px;">' + esc(a.name) + (a.unit ? ' [' + esc(a.unit) + ']' : '') + '</div>' : '') +
             '</div>';
     }).join('');
 }
