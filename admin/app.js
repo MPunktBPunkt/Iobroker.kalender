@@ -1,4 +1,4 @@
-/* iobroker.kalender — Browser-App v0.5.6 */
+/* iobroker.kalender — Browser-App v0.5.7 */
 'use strict';
 
 // ── Global State ─────────────────────────────────────────────────────────────
@@ -1028,17 +1028,29 @@ async function loadDpInstances() {
 }
 
 async function onInstChange(idx, inst) {
-    updateDpAction(idx, 'id', '');
-    updateDpAction(idx, 'name', '');
-    if (!inst) return;
+    // Store selected instance in action so it survives re-render
+    if (editingDpActions[idx]) {
+        editingDpActions[idx]._inst = inst;
+        editingDpActions[idx].id   = '';
+        editingDpActions[idx].name = '';
+    }
+    if (!inst) {
+        var el = document.getElementById('dp-actions-list');
+        if (el) el.innerHTML = buildDpActionsHtml(editingDpActions);
+        return;
+    }
     // Load states for this instance if not cached
     if (!_dpStates[inst]) {
+        // Show loading indicator in state dropdown directly
+        var stateSel = document.getElementById('dp-state-sel-' + idx);
+        if (stateSel) stateSel.innerHTML = '<option>Lade...</option>';
         try {
             const d = await api('GET', '/api/instance-states?instance=' + encodeURIComponent(inst));
             _dpStates[inst] = (d.states || []).filter(function(s) { return s.write; });
         } catch(e) { _dpStates[inst] = []; }
     }
-    // Re-render
+    // Re-render only this action row (not entire list → preserves other rows)
+    var container = document.querySelector('#dp-actions-list .seg-row:nth-child(' + (idx+1) + ')');
     var el = document.getElementById('dp-actions-list');
     if (el) el.innerHTML = buildDpActionsHtml(editingDpActions);
 }
@@ -1046,13 +1058,20 @@ async function onInstChange(idx, inst) {
 function onStateChange(idx, stateId) {
     if (!stateId) return;
     updateDpAction(idx, 'id', stateId);
+    // Keep _inst set — don't clear it
     // Get type from option data-type attribute
     var sel = document.getElementById('dp-state-sel-' + idx);
     if (sel && sel.selectedOptions[0]) {
         var t = sel.selectedOptions[0].dataset.type;
+        var n = sel.selectedOptions[0].textContent || '';
+        if (editingDpActions[idx]) editingDpActions[idx].name = n.split('—').pop().trim();
         if (t === 'boolean' || t === 'number' || t === 'string') {
-            changeDpType(idx, t);
-            return; // changeDpType re-renders
+            if (editingDpActions[idx]) editingDpActions[idx].type = t;
+            if (t === 'boolean' && (!editingDpActions[idx].value || editingDpActions[idx].value === '0')) editingDpActions[idx].value = 'true';
+            // Re-render to update value input
+            var el = document.getElementById('dp-actions-list');
+            if (el) el.innerHTML = buildDpActionsHtml(editingDpActions);
+            return;
         }
     }
     loadDpInfo(idx, stateId);
@@ -1091,11 +1110,13 @@ function buildDpActionsHtml(actions) {
                 'data-idx="' + i + '" oninput="updateDpAction(' + i + ',\'value\',this.value)">';
         }
         // Parse existing id into instance + shortId
-        var instPart = '', shortPart = a.id || '';
-        if (a.id && a.id.indexOf('.') > -1) {
+        // instPart: prefer stored _inst, else parse from id
+        var instPart = a._inst || '';
+        if (!instPart && a.id && a.id.indexOf('.') > -1) {
             var dot2 = a.id.indexOf('.', a.id.indexOf('.')+1);
-            if (dot2 > 0) { instPart = a.id.slice(0, dot2); shortPart = a.id.slice(dot2+1); }
+            if (dot2 > 0) instPart = a.id.slice(0, dot2);
         }
+        if (instPart && !a._inst && editingDpActions[i]) editingDpActions[i]._inst = instPart;
         return '<div class="seg-row" style="align-items:flex-start;flex-direction:column;">' +
             // Row 1: instance selector + state selector
             '<div style="display:flex;gap:6px;width:100%;margin-bottom:5px;">' +
@@ -1130,7 +1151,7 @@ function buildDpActionsHtml(actions) {
 }
 
 function addDpAction() {
-    editingDpActions.push({ id: '', type: 'boolean', value: 'true', name: '', unit: '' });
+    editingDpActions.push({ id: '', _inst: '', type: 'boolean', value: 'true', name: '', unit: '' });
     document.getElementById('dp-actions-list').innerHTML = buildDpActionsHtml(editingDpActions);
 }
 
