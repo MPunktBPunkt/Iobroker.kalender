@@ -1,4 +1,4 @@
-# Schnittstellen.md — iobroker.kalender v0.5.5
+# Schnittstellen.md — iobroker.kalender v0.5.7
 
 ## HTTP REST-API (Port 8095)
 
@@ -255,3 +255,20 @@ Mehrere Datenpunkt-Aktionen pro Event:
 ## Zeitzone (v0.5.0+)
 Konfigurierbar in Admin-UI. Wird in `/api/data` als `timezone`-Feld zurückgegeben.
 Alle Zeitvergleiche (minuteTick, dailyCheck, todayStr) arbeiten in der konfigurierten Zeitzone.
+
+---
+
+## GET /api/adapter-instances (v0.5.6+)
+Alle ioBroker-Adapter-Instanzen als Liste.
+```json
+{ "instances": ["freeair100.0", "javascript.0", "pool.0"] }
+```
+
+## GET /api/instance-states?instance=freeair100.0 (v0.5.6+)
+Alle schreibbaren States einer Instanz.
+```json
+{ "states": [
+  { "id": "freeair100.0.air.flowRate", "shortId": "air.flowRate",
+    "type": "number", "name": "Luftstrom", "unit": "m³/h", "write": true }
+] }
+```

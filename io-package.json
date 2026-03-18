@@ -1,7 +1,7 @@
 {
   "common": {
     "name": "kalender",
-    "version": "0.5.6",
+    "version": "0.5.7",
     "news": {
       "0.3.0": {
         "en": "Alexa integration, recurring events, birthday notifications",
@@ -32,7 +32,7 @@
       "alexa",
       "iobroker"
     ],
-    "license": "MIT",
+    "license": "GPL-3.0-only",
     "platform": "Javascript/Node.js",
     "main": "main.js",
     "enabled": true,

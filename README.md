@@ -1,10 +1,11 @@
 # iobroker.kalender
 
-[![Version](https://img.shields.io/badge/version-0.5.5-blue)](https://github.com/MPunktBPunkt/iobroker.kalender)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.5.7-blue)](https://github.com/MPunktBPunkt/iobroker.kalender)
+[![License](https://img.shields.io/badge/license-GPL%20v3-blue)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D16-brightgreen)](https://nodejs.org)
+[![Donate](https://img.shields.io/badge/Donate-PayPal-00457C.svg?logo=paypal)](https://www.paypal.com/donate/?business=martin%40bchmnn.de&currency_code=EUR)
 
-Vollständiger **Kalender-Adapter** für ioBroker mit Web-Dashboard, Alexa-Sprachausgabe, Zeit-Triggern und Google Kalender Integration.
+Vollständiger **Kalender-Adapter** für ioBroker mit Web-Dashboard, Alexa-Sprachausgabe, Zeit-Triggern und Google Kalender-Integration.
 
 ---
 
@@ -12,14 +13,18 @@ Vollständiger **Kalender-Adapter** für ioBroker mit Web-Dashboard, Alexa-Sprac
 
 | Feature | Beschreibung |
 |---|---|
-| 📅 Kalenderansicht | Tag / Woche / Monat mit Navigation |
-| ✅ Aufgaben & Termine | Mit Serieneinträgen (täglich / wöchentlich / monatlich / jährlich) |
-| ⏰ Zeit-Trigger | Täglich um HH:MM Uhr automatisch ausführen |
-| 🗣️ Nachricht bauen | Text + Datenpunkt-Werte kombinieren für Alexa |
-| 🔗 Datenpunkt-Aktion | Beliebigen State setzen (bool/Zahl/Text) + Zähler |
-| 🎂 Geburtstags-Manager | Countdown, Altersanzeige, Vorankündigung |
+| 📅 Kalenderansicht | Tag / Woche / Monat — Klick öffnet Tages-Panel |
+| ✅ Aufgaben & Termine | Serieneinträge: täglich, werktags, wöchentlich, monatlich, jährlich |
+| 📅 Wochentage | Frei wählbare Wochentage + Werktags-Preset |
+| ⏰ Zeit-Trigger | Alexa + Datenpunkte automatisch zu HH:MM Uhr auslösen |
+| 🔔 Erinnerung | X Minuten / Stunden / Tage vor dem Termin per Alexa |
+| 🗣️ Nachricht bauen | Text + Datenpunkt-Werte kombinieren für individuelle Ansagen |
+| 🔗 Datenpunkt-Aktionen | Beliebig viele States setzen (Bool/Zahl/Text) — mit Adapter-Picker |
+| 🎂 Geburtstags-Manager | Countdown, Altersanzeige, Vorankündigung per Alexa |
 | 📆 Google Kalender | ICS/iCal URL Import (read-only, stündlich aktualisiert) |
-| 🗣️ Alexa | Mehrere Geräte konfigurierbar |
+| 🗣️ Alexa | Mehrere Geräte, Lautstärke pro Gerät einstellbar |
+| 🕐 Wecker-Tab | Alle geplanten Aufgaben mit großer Uhrzeitanzeige |
+| 🕒 Zeitzone | Automatisch aus ioBroker system.config + Sync-Tool |
 | 📤 Import / Export | JSON Backup |
 
 ---
@@ -38,47 +43,42 @@ iobroker url https://github.com/MPunktBPunkt/iobroker.kalender
 iobroker restart kalender
 ```
 
----
-
-## Web-Dashboard
-
-Aufruf: `http://<iobroker-ip>:8095`
+Das Web-Dashboard ist erreichbar unter: `http://<iobroker-ip>:8095`
 
 ---
 
-## Zeit-Trigger & Nachricht bauen
+## Kurzanleitung: Poolpumpe morgens ein, abends aus + Alexa-Ansage
 
-### Beispiel: Morgens Poolpumpe einschalten + Ansage
+**Morgens:**
+1. Neuer Termin → Wiederholung: Täglich, Uhrzeit: `07:30`
+2. Datenpunkt-Aktion: Adapter `pool.0` → State `pump.switch` → `true`
+3. Nachricht bauen: `"Guten Morgen! Pooltemperatur: "` + Datenpunkt `pool.0.temperature` + `" Grad."`
+4. Alexa-Gerät auswählen (🔄 für Auto-Erkennung) → Speichern
 
-1. Neuer Termin → Datum: heute, Wiederholung: Täglich
-2. **Auslöser-Uhrzeit:** `07:30`
-3. **Datenpunkt-Aktion:** `pool.0.pump.switch` → `true` (Boolean)
-4. **Nachricht bauen:** 
-   - `+ Text` → "Guten Morgen! Die Pooltemperatur beträgt "
-   - `+ Datenpunkt` → `pool.0.temperature`, Suffix: " Grad."
-   - `+ Text` → " Die Pumpe läuft jetzt."
-5. Alexa-Gerät auswählen → Speichern
-
-### Beispiel: Abends Poolpumpe aus
-
-1. Neuer Termin → Täglich, Auslöser-Uhrzeit: `21:00`
-2. Datenpunkt-Aktion: `pool.0.pump.switch` → `false` (Boolean)
-
----
-
-## Google Kalender einbinden
-
-1. Google Kalender → Kalendereinstellungen → "Kalender-URL" (iCal-Format, endet auf `.ics`)
-2. System-Tab → Externe Kalender → URL einfügen → Hinzufügen
-3. Der Adapter lädt die Kalender stündlich und zeigt sie lila in der Kalenderansicht an
+**Abends:**
+1. Neuer Termin → Täglich, Uhrzeit: `21:00`
+2. Datenpunkt-Aktion: `pool.0.pump.switch` → `false`
 
 ---
 
 ## Alexa einrichten
 
-State-Pfad für alexa2-Adapter: `alexa2.0.Echo-Devices.<SERIAL>.Commands.speak`
+State-Pfad im alexa2-Adapter:
+```
+alexa2.0.Echo-Devices.<SERIAL>.Commands.speak   ← Sprachausgabe
+alexa2.0.Echo-Devices.<SERIAL>.Commands.volume  ← Lautstärke (0–100)
+```
 
-Die Seriennummer findet man in ioBroker → Objects → alexa2.0.Echo-Devices.
+Die Seriennummer findet man in ioBroker → Objekte → alexa2.0.Echo-Devices.  
+Im Adapter einfach auf 🔄 klicken — alle Echo-Geräte werden automatisch erkannt.
+
+---
+
+## Google Kalender einbinden
+
+1. Google Kalender → ⚙️ Einstellungen → Kalender auswählen → **Privatadresse im iCal-Format** kopieren
+2. Kalender-Adapter → System-Tab → Externe Kalender → URL einfügen → Hinzufügen
+3. Der Adapter lädt die Kalender stündlich und zeigt sie lila (read-only) in der Kalenderansicht an
 
 ---
 
@@ -94,90 +94,59 @@ Die Seriennummer findet man in ioBroker → Objects → alexa2.0.Echo-Devices.
 
 ---
 
+## Weitere Adapter von MPunktBPunkt
+
+| Adapter | Beschreibung |
+|---|---|
+| [iobroker.metermaster](https://github.com/MPunktBPunkt/iobroker.metermaster) | Zählerstand-App: Strom, Wasser, Gas per Android-App ablesen |
+| [iobroker.linuxdashboard](https://github.com/MPunktBPunkt/iobroker.linuxdashboard) | Linux System-Dashboard: CPU, RAM, Dienste, Terminal |
+| [iobroker.kostalpiko](https://github.com/MPunktBPunkt/iobroker.kostalpiko) | Kostal PIKO Solar-Wechselrichter (PIKO 8.3 / 5.5) |
+| [iobroker.fritzwireguard](https://github.com/MPunktBPunkt/iobroker.FritzWireguard) | WireGuard VPN über FritzBox mit TCP-Tunnel-Manager |
+| [iobroker.freeair100](https://github.com/MPunktBPunkt/Iobroker.freeair100) | bluMartin freeAir 100 Lüftungsgerät |
+| [iobroker.mbrepository](https://github.com/MPunktBPunkt/iobroker.mbrepository) | Eigene Adapter verwalten, updaten, installieren |
+
+---
+
 ## Changelog
 
+### 0.5.7 (2026-03-18)
+- Bugfix: Adapter-Dropdown im Datenpunkt-Picker springt nicht mehr zurück
+
+### 0.5.6 (2026-03-18)
+- Neu: Datenpunkt-Picker mit Adapter-Instanz + State Dropdown
+- Bugfix: Klick auf Kalendertag öffnet Tages-Panel (nicht mehr Event-Modal)
+
 ### 0.5.5 (2026-03-18)
-- Tagesansicht: geht jetzt vollständig bis 24 Uhr (overflow-Bug behoben)
-- Monats-/Wochenansicht: Klick öffnet Tages-Panel unten statt Event-Modal
-- Aufgaben: neuer "⏰⏰ Wecker"-Tab mit großer Uhrzeitanzeige + Farbmarkierung
-- Erinnerung vorher jetzt als Badge auf der Aufgabenkarte sichtbar
+- Neu: Wecker-Tab mit großer Uhrzeitanzeige
+- Neu: Tages-Panel beim Klick auf Kalender-Tag
+- Bugfix: Tagesansicht scrollt jetzt bis 24:00 Uhr
 
 ### 0.5.4 (2026-03-17)
-- Wochentage bei wöchentlicher Wiederholung (Mo/Di/Mi...)
-- Werktags-Preset (Mo–Fr automatisch)
-- Erinnerung X Minuten/Stunden/Tage vorher (Alexa-Ansage)
-- Uhrzeit = Auslöser (kein doppeltes Feld mehr)
+- Neu: Wochentage bei wöchentlicher Wiederholung (Mo–So, Werktags-Preset)
+- Neu: Erinnerung X Minuten/Stunden/Tage vorher per Alexa
+- Uhrzeit = Auslöser (ein Feld statt zwei)
 
-### 0.5.3 (2026-03-17)
-- Zeitzone-Dashboard im System-Tab (Linux vs. ioBroker Vergleich)
-- Zeitzone synchronisieren per Button (sudo timedatectl)
-- NTP-Sync-Button
+### 0.5.0–0.5.3 (2026-03-17)
+- Zeitzone automatisch aus ioBroker system.config
+- Zeitzone-Dashboard im System-Tab mit Linux-Sync
 
-### 0.5.2 (2026-03-17)
-- Zeitzone automatisch aus ioBroker system.config lesen
-- Kein manuelles Konfigurieren mehr nötig
-
-### 0.5.1 (2026-03-17)
-- Bugfix: Aufgaben anlegen ging nicht (const ev vor Verwendung deklariert)
-- Alexa-Abschnitt aus System-Tab entfernt (nur noch im Aufgaben-Modal)
-
-### 0.5.0 (2026-03-17)
-- Zeitzone-Einstellung in Admin-Konfiguration (Standard: Europe/Berlin)
-- Alle Zeitvergleiche (Trigger, Tagescheck) timezone-aware via Intl.DateTimeFormat
-- Zeitzone wird in Kopfzeile angezeigt
-
-### 0.4.9 (2026-03-17)
-- Bugfix: Syntax-Fehler in app.js behoben (Webinterface reagierte nicht)
-- Bugfix: loadDpInfoById Hilfsfunktion für querySelector-Problem
-
-### 0.4.8 (2026-03-17)
-- Datenpunkt-Aktionen: beliebig viele per + Datenpunkt (dpActions-Array)
-- Auto-Typ-Erkennung beim Laden der State-ID aus ioBroker
-- Bool: true/false Dropdown, Zahl: Zahlenfeld, Text: Textfeld
-- /api/objects-search und /api/object-info Endpunkte
-- Filter Aufgaben-Tab: vergangene Einmaltermine nur noch unter Erledigt
-
-### 0.4.7 (2026-03-17)
-- Bugfix: Kalenderbreite verschiebt sich bei Terminen nicht mehr
-- CSS: minmax(0,1fr), overflow:hidden, display:block auf event-chip
-
-### 0.4.6 (2026-03-17)
-- Uhrzeit in Kopfzeile (sekundengenau, Browserzeit)
-- ▶ Jetzt-Ausführen-Button auf jeder Aufgabenkarte
-- Warnhinweis im Modal: ohne triggerTime feuert Alexa erst um 00:01 Uhr
-- /api/trigger-event Endpunkt für manuelle Sofortausführung
-
-### 0.4.5 (2026-03-17)
-- Lautstärke-Slider (0-100%) pro Alexa-Gerät pro Aufgabe
-- Volume-State wird vor Speak gesetzt (400ms Pause)
-
-### 0.4.4 (2026-03-17)
-- Alexa-Picker direkt im Aufgaben-Modal mit Auto-Discover
-- Verbesserte Kalenderansicht: Farbpunkte, Wochenend-Highlight, Uhrzeit-Linie
-
-### 0.4.3 (2026-03-17)
-- Alexa Geräte automatisch aus ioBroker laden (Gerätename statt GUID)
-
-### 0.4.2 (2026-03-17)
-- Fix: 404 beim Öffnen über Admin-UI behoben (admin/index.html)
-
-### 0.4.1 (2026-03-17)
-- Fix: SIGKILL beim Start behoben
-- Fix: Direktlink im Admin-UI (localLink)
-
-### 0.4.0 (2026-03-17)
-- **Neu:** Zeit-Trigger (HH:MM) für täglich exakte Ausführung
-- **Neu:** Nachricht-Baukasten: Text + Datenpunkt-Werte kombinieren
-- **Neu:** Datenpunkt-Aktion: State setzen (bool/Zahl/Text) direkt beim Trigger
-- **Neu:** Google Kalender / ICS-Import (read-only, stündliche Aktualisierung)
-- **Aufgaben-Filter** "Geplant" für Zeit-Trigger-Events
-- **Alexa-Datenpunkt-Vorschau** im Nachricht-Baukasten
-
-### 0.3.0 (2026-03-17)
-- Vollständige Kalender-SPA, Geburtstage, Alexa, Import/Export
+### 1.0.0 (2026-03-18)
+_Erste stabile Veröffentlichung nach Entwicklungsphase (0.x)_
 
 ---
 
 ## Lizenz
 
-MIT — © MPunktBPunkt
+**GNU General Public License v3.0**
+
+Dieses Projekt steht unter der GPL v3. Du darfst den Code verwenden, studieren und weitergeben — aber Modifikationen müssen ebenfalls unter der GPL v3 veröffentlicht werden und den Copyright-Hinweis enthalten.
+
+© 2026 [MPunktBPunkt](https://github.com/MPunktBPunkt)
+
+---
+
+## Unterstützung
+
+Wenn dir dieser Adapter gefällt und du die Weiterentwicklung unterstützen möchtest:
+
+[![Donate](https://img.shields.io/badge/Donate-PayPal-00457C.svg?logo=paypal)](https://www.paypal.com/donate/?business=martin%40bchmnn.de&currency_code=EUR)

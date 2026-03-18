@@ -138,7 +138,7 @@ class KalenderAdapter extends utils.Adapter {
     async onReady() {
         try {
         try { this.pack = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')); }
-        catch(e) { this.pack = { version: '0.5.6' }; }
+        catch(e) { this.pack = { version: '0.5.7' }; }
 
         this.alexaDevices = [];
         try { const raw = this.config && this.config.alexaDevices; if (raw) this.alexaDevices = JSON.parse(raw); } catch(e) {}
