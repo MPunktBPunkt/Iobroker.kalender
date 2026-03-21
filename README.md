@@ -1,6 +1,6 @@
 # iobroker.kalender
 
-[![Version](https://img.shields.io/badge/version-0.5.7-blue)](https://github.com/MPunktBPunkt/iobroker.kalender)
+[![Version](https://img.shields.io/badge/version-0.5.8-blue)](https://github.com/MPunktBPunkt/iobroker.kalender)
 [![License](https://img.shields.io/badge/license-GPL%20v3-blue)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D16-brightgreen)](https://nodejs.org)
 [![Donate](https://img.shields.io/badge/Donate-PayPal-00457C.svg?logo=paypal)](https://www.paypal.com/donate/?business=martin%40bchmnn.de&currency_code=EUR)
