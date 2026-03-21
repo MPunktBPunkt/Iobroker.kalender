@@ -1,4 +1,4 @@
-/* iobroker.kalender — Browser-App v0.5.7 */
+/* iobroker.kalender — Browser-App v0.5.8 */
 'use strict';
 
 // ── Global State ─────────────────────────────────────────────────────────────
@@ -815,7 +815,9 @@ function renderTasks() {
         '<div class="view-btns">' +
         filters.map(([k,l]) => '<div class="view-btn' + (taskFilter===k?' active':'') + '" data-f="' + k + '" onclick="setTaskFilter(this.dataset.f)">' + l + '</div>').join('') +
         '</div>' +
-        '<button class="btn btn-primary btn-sm" onclick="openEventModal(null)">+ Neu</button>' +
+        (taskFilter === 'wecker'
+            ? '<button class="btn btn-primary btn-sm" onclick="openAlarmModal(null)">\u23F0 Neuer Wecker</button>'
+            : '<button class="btn btn-primary btn-sm" onclick="openEventModal(null)">+ Neu</button>') +
         '<span style="margin-left:auto;color:var(--muted);font-size:12px;">' + filtered.length + ' Eintr\u00E4ge</span>' +
         '</div>';
 
@@ -908,6 +910,299 @@ function renderWecker(items) {
             '</div>' +
             '</div></div>';
     }).join('');
+}
+
+
+// ── ALARM MODAL ───────────────────────────────────────────────────────────────
+var _alarmH = 7, _alarmM = 0, _alarmDays = [], _alarmEventId = null;
+var _alarmDragging = false, _alarmDragY = 0, _alarmDragTarget = null, _alarmDragStart = 0;
+
+const ALARM_DAY_LABELS = ['S','M','D','M','D','F','S']; // So Mo Di Mi Do Fr Sa
+const ALARM_DAY_KEYS   = ['sun','mon','tue','wed','thu','fri','sat'];
+
+function openAlarmModal(id) {
+    _alarmEventId = id;
+    var ev = id ? events.find(function(e) { return e.id === id; }) : null;
+
+    // Inject CSS once
+    if (!document.getElementById('alarm-css')) {
+        var s = document.createElement('style');
+        s.id = 'alarm-css';
+        s.textContent = [
+            '.alarm-time-wrap{display:flex;justify-content:center;align-items:center;gap:8px;margin:20px 0;user-select:none;}',
+            '.alarm-drum{width:80px;height:132px;overflow:hidden;position:relative;border-radius:16px;background:var(--bg3);}',
+            '.alarm-drum::before,.alarm-drum::after{content:"";position:absolute;left:0;right:0;height:40px;z-index:2;pointer-events:none;}',
+            '.alarm-drum::before{top:0;background:linear-gradient(to bottom,var(--bg3) 0%,transparent 100%);}',
+            '.alarm-drum::after{bottom:0;background:linear-gradient(to top,var(--bg3) 0%,transparent 100%);}',
+            '.alarm-drum-inner{display:flex;flex-direction:column;align-items:center;}',
+            '.alarm-drum-item{height:44px;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800;font-family:var(--mono);color:var(--dim);width:80px;flex-shrink:0;transition:color .1s,font-size .1s;}',
+            '.alarm-drum-item.active{color:var(--text);font-size:38px;}',
+            '.alarm-colon{font-size:42px;font-weight:900;color:var(--text);font-family:var(--mono);margin-bottom:4px;}',
+            '.alarm-days{display:flex;justify-content:center;gap:8px;margin:16px 0 20px;}',
+            '.alarm-day{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;cursor:pointer;border:2px solid var(--border);color:var(--muted);transition:all .15s;}',
+            '.alarm-day.on{background:#c0392b;border-color:#c0392b;color:#fff;}',
+            '.alarm-day:hover{border-color:var(--red);}',
+            '.alarm-preset-btn{padding:7px 16px;border-radius:20px;border:1px solid var(--border);background:var(--bg3);color:var(--text);cursor:pointer;font-size:13px;font-weight:500;transition:all .15s;white-space:nowrap;}',
+            '.alarm-preset-btn.active{background:#c0392b;border-color:#c0392b;color:#fff;}',
+            '.alarm-sel-line{position:absolute;left:0;right:0;top:50%;margin-top:-22px;height:44px;border-top:1px solid var(--border2);border-bottom:1px solid var(--border2);pointer-events:none;z-index:1;}'
+        ].join('');
+        document.head.appendChild(s);
+    }
+
+    // Init state from event or defaults
+    var t = (ev && (ev.triggerTime || ev.time)) || '07:00';
+    _alarmH = parseInt(t.split(':')[0]) || 7;
+    _alarmM = parseInt(t.split(':')[1]) || 0;
+    _alarmDays = (ev && ev.recurrenceDays && ev.recurrenceDays.length > 0)
+        ? ev.recurrenceDays.slice()
+        : ['mon','tue','wed','thu','fri'];
+
+    var modal = document.getElementById('event-modal-inner');
+    var alexaHtml = buildAlexaPickerHtml(ev ? (ev.alexaDatapoints || []) : [], 'ev-alexa', ev ? (ev.alexaVolumes || {}) : {});
+    loadDpInstances();
+    editingDpActions = [];
+    if (ev && ev.dpActions && ev.dpActions.length > 0) editingDpActions = JSON.parse(JSON.stringify(ev.dpActions));
+
+    modal.innerHTML =
+        '<h3>\u23F0 ' + (ev ? 'Wecker bearbeiten' : 'Neuer Wecker') + '</h3>' +
+
+        // Name
+        '<div class="form-row"><label>Bezeichnung</label>' +
+        '<input id="al-title" type="text" placeholder="z.B. Aufstehen, Pool einschalten..." value="' + esc(ev ? ev.title : '') + '"></div>' +
+
+        // Drum picker
+        '<div class="alarm-time-wrap" id="alarm-picker">' +
+        '<div style="position:relative;">' +
+        '<div class="alarm-sel-line"></div>' +
+        '<div class="alarm-drum" id="drum-h" data-type="h" onwheel="alarmWheel(event,this)" ontouchstart="alarmTouchStart(event,this)" ontouchmove="alarmTouchMove(event,this)">' +
+        '<div class="alarm-drum-inner" id="drum-h-inner"></div></div></div>' +
+        '<div class="alarm-colon">:</div>' +
+        '<div style="position:relative;">' +
+        '<div class="alarm-sel-line"></div>' +
+        '<div class="alarm-drum" id="drum-m" data-type="m" onwheel="alarmWheel(event,this)" ontouchstart="alarmTouchStart(event,this)" ontouchmove="alarmTouchMove(event,this)">' +
+        '<div class="alarm-drum-inner" id="drum-m-inner"></div></div></div>' +
+        '</div>' +
+
+        // Presets
+        '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:16px;">' +
+        '<button class="alarm-preset-btn" data-p="none" onclick="alarmPreset(this.dataset.p)">Einmalig</button>' +
+        '<button class="alarm-preset-btn" data-p="workdays" onclick="alarmPreset(this.dataset.p)">Werktags</button>' +
+        '<button class="alarm-preset-btn" data-p="daily" onclick="alarmPreset(this.dataset.p)">T\u00E4glich</button>' +
+        '<button class="alarm-preset-btn" data-p="weekend" onclick="alarmPreset(this.dataset.p)">Wochenende</button>' +
+        '<button class="alarm-preset-btn" data-p="custom" onclick="alarmPreset(this.dataset.p)">Benutzerdefiniert</button>' +
+        '</div>' +
+
+        // Day circles
+        '<div class="alarm-days" id="alarm-days-row">' +
+        ALARM_DAY_LABELS.map(function(l, i) {
+            var key = ALARM_DAY_KEYS[i];
+            var on  = _alarmDays.includes(key);
+            return '<div class="alarm-day' + (on ? ' on' : '') + '" data-key="' + key + '" onclick="alarmToggleDay(this.dataset.key)">' + l + '</div>';
+        }).join('') +
+        '</div>' +
+
+        // Date (only for one-time alarms)
+        '<div id="al-date-row" class="form-row" style="display:' + (_alarmDays.length === 0 ? 'block' : 'none') + ';">' +
+        '<label>Datum (einmalig)</label><input id="al-date" type="date" value="' + esc(ev ? ev.date : todayStr()) + '"></div>' +
+
+        // Erinnerung
+        '<hr class="form-divider">' +
+        '<div class="form-row"><label>\uD83D\uDD14 Erinnerung vorher (optional)</label>' +
+        '<div style="display:flex;gap:6px;">' +
+        '<input id="al-rem-val" type="number" min="1" max="999" placeholder="z.B. 10" style="width:80px;background:var(--bg2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;" value="' + esc(ev && ev.reminderBefore ? ev.reminderBefore.value : '') + '">' +
+        '<select id="al-rem-unit" style="flex:1;background:var(--bg2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;">' +
+        ['minutes','hours'].map(function(u) { return '<option value="' + u + '"' + (ev && ev.reminderBefore && ev.reminderBefore.unit === u ? ' selected' : '') + '>' + {minutes:'Minuten',hours:'Stunden'}[u] + '</option>'; }).join('') +
+        '</select></div></div>' +
+
+        // Datenpunkt-Aktionen
+        '<hr class="form-divider">' +
+        '<div class="form-section">\uD83D\uDD17 Datenpunkt-Aktionen</div>' +
+        '<div id="dp-actions-list">' + buildDpActionsHtml(editingDpActions) + '</div>' +
+        '<button class="btn btn-ghost btn-sm" onclick="addDpAction()" style="margin-top:6px;">+ Datenpunkt</button>' +
+
+        // Alexa
+        '<hr class="form-divider">' +
+        '<div class="form-section">\uD83D\uDDE3\uFE0F Alexa Sprachausgabe</div>' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
+        '<div class="view-btns">' +
+        '<div class="view-btn' + (!((ev&&ev.messageSegments&&ev.messageSegments.length>0)) ? ' active' : '') + '" data-m="simple" onclick="switchMsgMode(this.dataset.m)" id="msg-btn-simple">Einfach</div>' +
+        '<div class="view-btn' + ((ev&&ev.messageSegments&&ev.messageSegments.length>0) ? ' active' : '') + '" data-m="builder" onclick="switchMsgMode(this.dataset.m)" id="msg-btn-builder">Nachricht bauen</div>' +
+        '</div></div>' +
+        '<div id="msg-simple" style="display:' + ((ev&&ev.messageSegments&&ev.messageSegments.length>0) ? 'none' : 'block') + ';">' +
+        '<div class="form-row"><label>Nachricht</label><input id="ev-alexa-msg" type="text" placeholder="Es ist Zeit! Pool l\u00E4uft jetzt." value="' + esc(ev && !(ev.messageSegments&&ev.messageSegments.length) ? ev.alexaMessage : '') + '"></div></div>' +
+        '<div id="msg-builder" style="display:' + ((ev&&ev.messageSegments&&ev.messageSegments.length>0) ? 'block' : 'none') + ';">' +
+        '<div id="seg-container"></div>' +
+        '<div style="display:flex;gap:8px;margin-top:8px;">' +
+        '<button class="btn btn-ghost btn-sm" data-t="text" onclick="addSegment(this.dataset.t)">&plus; Text</button>' +
+        '<button class="btn btn-ghost btn-sm" data-t="datapoint" onclick="addSegment(this.dataset.t)">&plus; Datenpunkt</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="previewMessage()" style="margin-left:auto;">&#128065; Vorschau</button></div>' +
+        '<div id="msg-preview" style="display:none;background:var(--bg3);border-radius:6px;padding:10px;margin-top:10px;font-size:13px;color:var(--green);">...</div></div>' +
+        alexaHtml +
+
+        '<hr class="form-divider">' +
+        '<div style="display:flex;gap:10px;justify-content:flex-end;">' +
+        (ev ? '<button class="btn btn-danger" data-eid="' + (id||'') + '" onclick="deleteEvent(this.dataset.eid)">L\u00F6schen</button>' : '') +
+        '<button class="btn btn-ghost" onclick="closeModal(\'event-modal\')">Abbrechen</button>' +
+        '<button class="btn btn-primary" style="background:#c0392b;border-color:#c0392b;" onclick="saveAlarm()">\u23F0 Speichern</button>' +
+        '</div>';
+
+    document.getElementById('event-modal').classList.add('open');
+    editingSegments = ev && ev.messageSegments ? JSON.parse(JSON.stringify(ev.messageSegments)) : [];
+    renderSegments();
+    alarmRenderDrums();
+    alarmUpdatePresetBtns();
+}
+
+function alarmRenderDrums() {
+    ['h','m'].forEach(function(type) {
+        var val  = type === 'h' ? _alarmH : _alarmM;
+        var max  = type === 'h' ? 24 : 60;
+        var inner = document.getElementById('drum-' + type + '-inner');
+        if (!inner) return;
+        var items = [];
+        // Show val-2 to val+2
+        for (var i = -2; i <= 2; i++) {
+            var v = ((val + i) % max + max) % max;
+            items.push('<div class="alarm-drum-item' + (i === 0 ? ' active' : '') + '">' +
+                String(v).padStart(2,'0') + '</div>');
+        }
+        inner.innerHTML = items.join('');
+    });
+}
+
+function alarmWheel(e, drum) {
+    e.preventDefault();
+    var type = drum.dataset.type;
+    var delta = e.deltaY > 0 ? 1 : -1;
+    if (type === 'h') { _alarmH = ((_alarmH + delta) % 24 + 24) % 24; }
+    else              { _alarmM = ((_alarmM + delta) % 60 + 60) % 60; }
+    alarmRenderDrums();
+}
+
+var _touchStartY = 0, _touchType = '';
+function alarmTouchStart(e, drum) {
+    _touchStartY = e.touches[0].clientY;
+    _touchType   = drum.dataset.type;
+}
+function alarmTouchMove(e, drum) {
+    e.preventDefault();
+    var dy = _touchStartY - e.touches[0].clientY;
+    if (Math.abs(dy) < 20) return;
+    var delta = dy > 0 ? 1 : -1;
+    _touchStartY = e.touches[0].clientY;
+    if (_touchType === 'h') { _alarmH = ((_alarmH + delta) % 24 + 24) % 24; }
+    else                    { _alarmM = ((_alarmM + delta) % 60 + 60) % 60; }
+    alarmRenderDrums();
+}
+
+// Click +/- on drum via click top/bottom half
+document.addEventListener('click', function(e) {
+    var drum = e.target.closest && e.target.closest('.alarm-drum');
+    if (!drum) return;
+    var rect  = drum.getBoundingClientRect();
+    var delta = e.clientY < rect.top + rect.height / 2 ? -1 : 1;
+    var type  = drum.dataset.type;
+    if (type === 'h') { _alarmH = ((_alarmH + delta) % 24 + 24) % 24; }
+    else if (type === 'm') { _alarmM = ((_alarmM + delta) % 60 + 60) % 60; }
+    if (type === 'h' || type === 'm') alarmRenderDrums();
+});
+
+function alarmToggleDay(key) {
+    var idx = _alarmDays.indexOf(key);
+    if (idx >= 0) _alarmDays.splice(idx, 1);
+    else          _alarmDays.push(key);
+    // Update day circles
+    document.querySelectorAll('#alarm-days-row .alarm-day').forEach(function(el) {
+        el.classList.toggle('on', _alarmDays.includes(el.dataset.key));
+    });
+    // Show/hide date field
+    var dr = document.getElementById('al-date-row');
+    if (dr) dr.style.display = _alarmDays.length === 0 ? 'block' : 'none';
+    alarmUpdatePresetBtns();
+}
+
+function alarmPreset(p) {
+    if      (p === 'none')     _alarmDays = [];
+    else if (p === 'workdays') _alarmDays = ['mon','tue','wed','thu','fri'];
+    else if (p === 'daily')    _alarmDays = ['mon','tue','wed','thu','fri','sat','sun'];
+    else if (p === 'weekend')  _alarmDays = ['sat','sun'];
+    else if (p === 'custom')   { /* user selects manually */ }
+    // Update circles
+    document.querySelectorAll('#alarm-days-row .alarm-day').forEach(function(el) {
+        el.classList.toggle('on', _alarmDays.includes(el.dataset.key));
+    });
+    var dr = document.getElementById('al-date-row');
+    if (dr) dr.style.display = _alarmDays.length === 0 ? 'block' : 'none';
+    alarmUpdatePresetBtns();
+}
+
+function alarmUpdatePresetBtns() {
+    var days = _alarmDays.slice().sort().join(',');
+    var wk   = ['fri','mon','thu','tue','wed'].join(',');
+    var all  = ['fri','mon','sat','sun','thu','tue','wed'].join(',');
+    var we   = ['sat','sun'].join(',');
+    document.querySelectorAll('.alarm-preset-btn').forEach(function(btn) {
+        var p = btn.textContent.trim();
+        btn.classList.toggle('active',
+            (p === 'Einmalig'       && _alarmDays.length === 0) ||
+            (p === 'Werktags'       && days === wk) ||
+            (p === 'T\u00E4glich'  && days === all) ||
+            (p === 'Wochenende'     && days === we)
+        );
+    });
+}
+
+async function saveAlarm() {
+    var title = (document.getElementById('al-title') || {}).value || '';
+    if (!title.trim()) { alert('Bitte eine Bezeichnung eingeben.'); return; }
+    var hhmm = String(_alarmH).padStart(2,'0') + ':' + String(_alarmM).padStart(2,'0');
+    var rec  = _alarmDays.length === 0 ? 'none'
+             : (_alarmDays.length === 7 ? 'daily' : 'weekly');
+
+    var remVal  = (document.getElementById('al-rem-val')  || {}).value;
+    var remUnit = (document.getElementById('al-rem-unit') || {}).value || 'minutes';
+    var msgBuilderVisible = document.getElementById('msg-builder') &&
+        document.getElementById('msg-builder').style.display !== 'none';
+
+    var ev = {
+        title:           title.trim(),
+        description:     '',
+        date:            _alarmDays.length === 0
+                            ? ((document.getElementById('al-date')||{}).value || todayStr())
+                            : todayStr(),
+        time:            hhmm,
+        triggerTime:     hhmm,
+        type:            'task',
+        color:           '#f85149',
+        recurrence:      rec,
+        recurrenceDays:  _alarmDays.slice(),
+        recurrenceEnd:   '',
+        done:            false,
+        reminderBefore:  remVal ? { value: parseInt(remVal), unit: remUnit } : null,
+        dpActions:       JSON.parse(JSON.stringify(editingDpActions)),
+        setDatapointId:  editingDpActions.length > 0 ? editingDpActions[0].id : '',
+        setDatapointValue: editingDpActions.length > 0 ? editingDpActions[0].value : '',
+        setDatapointType:  editingDpActions.length > 0 ? editingDpActions[0].type : 'boolean',
+        iobCounterId:    '',
+        iobDatapointId:  '',
+        iobDatapointValue: true,
+        alexaMessage:    msgBuilderVisible ? '' : ((document.getElementById('ev-alexa-msg')||{}).value||'').trim(),
+        messageSegments: msgBuilderVisible ? JSON.parse(JSON.stringify(editingSegments)) : [],
+        alexaDatapoints: collectAlexaDatapoints('ev-alexa'),
+        alexaVolumes:    collectAlexaVolumes('ev-alexa')
+    };
+    try {
+        if (_alarmEventId) {
+            var updated = await api('PUT', '/api/events/' + _alarmEventId, ev);
+            var idx = events.findIndex(function(e) { return e.id === _alarmEventId; });
+            if (idx !== -1) events[idx] = updated;
+        } else {
+            events.push(await api('POST', '/api/events', ev));
+        }
+        closeModal('event-modal');
+        refreshCurrentTab();
+        updateHeader({});
+    } catch(e) { alert('Fehler: ' + e.message); }
 }
 
 function setTaskFilter(f) { taskFilter = f; renderTasks(); }
